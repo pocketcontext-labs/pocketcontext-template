@@ -1,0 +1,249 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f8fa;
+  --panel: #ffffff;
+  --field: #ffffff;
+  --border: #d8dee8;
+  --text: #1f2a37;
+  --muted: #536175;
+  --accent: #2f5b8f;
+  --accent-text: #ffffff;
+  --accent-soft: #2f5b8f14;
+  --danger: #a3302a;
+  --brand: #24364f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161c;
+    --panel: #1a2029;
+    --field: #12161c;
+    --border: #313a47;
+    --text: #e4e9f0;
+    --muted: #a3afbf;
+    --accent: #8db4e8;
+    --accent-text: #0e1726;
+    --accent-soft: #8db4e81f;
+    --danger: #f19a92;
+    --brand: #e4e9f0;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+button {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.secondary {
+  background: transparent;
+  border-color: var(--border);
+}
+.secondary:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+.link {
+  background: none;
+  color: var(--accent);
+  padding: 4px 0;
+  text-decoration: underline;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+.product-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--brand);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.3px;
+}
+.product-brand img {
+  display: block;
+  flex-shrink: 0;
+}
+.sign-in {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+.card {
+  width: min(400px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+}
+.card h1 {
+  font-size: 22px;
+  margin: 24px 0 16px;
+}
+.stack {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+label {
+  display: grid;
+  gap: 4px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.hint,
+.quiet {
+  color: var(--muted);
+  font-size: 13px;
+}
+.error {
+  color: var(--danger);
+  font-weight: 600;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.account span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.content {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 24px;
+  align-items: start;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 0;
+}
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+.add {
+  display: grid;
+  gap: 6px;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.add .quiet,
+.panel > .quiet {
+  margin: 0;
+}
+.greetings {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  gap: 8px;
+}
+.greetings li {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.greetings p {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.greetings time {
+  color: var(--muted);
+  font-size: 12px;
+}
+.excerpt {
+  font-style: italic;
+}
+.empty {
+  color: var(--muted);
+  padding: 12px 0;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+@media (max-width: 520px) {
+  .topbar,
+  .content {
+    padding: 14px 16px;
+  }
+  .card {
+    padding: 22px;
+  }
+}
+
+label input {
+  font-weight: 400;
+}

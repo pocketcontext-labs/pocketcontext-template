@@ -1,0 +1,10 @@
+{
+  "note": "Marks this repository as pocketcontext-template itself. A product derived from it deletes this file (prompts/new-product.md); tests/identity_check.py then requires every template identity item to be renamed.",
+  "repository": "pocketcontext-labs/pocketcontext-template",
+  "module": "github.com/pocketcontext-labs/pocketcontext-template",
+  "name": "TemplateContext",
+  "id": "templatecontext",
+  "envPrefix": "TEMPLATECONTEXT_",
+  "port": 8098,
+  "collection": "greetings"
+}

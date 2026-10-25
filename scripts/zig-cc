@@ -1,0 +1,3 @@
+#!/bin/sh
+# C compiler wrapper for cross-compiling with Zig: ZIG_TARGET=x86_64-windows-gnu.
+exec "${ZIG:-zig}" cc -target "${ZIG_TARGET:?set ZIG_TARGET}" "$@"

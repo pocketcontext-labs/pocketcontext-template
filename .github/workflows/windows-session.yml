@@ -1,0 +1,140 @@
+# Interactive Windows session for manual testing of this bundle over RDP.
+# The runner serves only 127.0.0.1:3389 through tailcat to the client key in
+# TAILCAT_ALLOW; connection details come from the windows-session environment
+# and are never printed. Connect from macOS with:
+#   tailcat forward "$TAILCAT_ADDRESS" 13389:3389   # then RDP to localhost:13389
+# End early by creating C:\end-session on the runner or cancelling the run.
+name: Windows session
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit, branch or tag to build'
+        required: true
+        default: main
+        type: string
+      minutes:
+        description: 'Session length in minutes (at most 300)'
+        required: true
+        default: '120'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-session
+  cancel-in-progress: false
+
+jobs:
+  session:
+    runs-on: windows-2025
+    environment: windows-session
+    timeout-minutes: 345
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check inputs and secrets
+        env:
+          MINUTES: ${{ inputs.minutes }}
+          TAILCAT_SERVER_KEY: ${{ secrets.TAILCAT_SERVER_KEY }}
+          TAILCAT_ADDRESS: ${{ secrets.TAILCAT_ADDRESS }}
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+          TAILCAT_ALLOW: ${{ vars.TAILCAT_ALLOW }}
+        run: |
+          if ($env:MINUTES -notmatch '^\d+$' -or [int]$env:MINUTES -lt 10 -or [int]$env:MINUTES -gt 300) { throw 'minutes must be 10..300' }
+          foreach ($name in 'TAILCAT_SERVER_KEY','TAILCAT_ADDRESS','RDP_PASSWORD') {
+            if (-not (Get-Item "env:$name").Value) { throw "secret $name is empty" }
+          }
+          if ($env:TAILCAT_ALLOW -notmatch '^nodekey:[0-9a-f]{64}$') { throw 'TAILCAT_ALLOW must be one nodekey' }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Build the reader
+        working-directory: ui
+        run: |
+          npm install --global pnpm@10.33.2
+          pnpm install --frozen-lockfile
+          pnpm build
+      # Windows runners provide MinGW-w64 gcc for CGO.
+      - name: Build the binary onto the desktop
+        shell: bash
+        run: |
+          CGO_ENABLED=1 go build -trimpath -tags "$(cat build-tags.txt)" -o bin/templatecontext.exe ./cmd/templatecontext
+          desktop="$(cygpath "$USERPROFILE")/Desktop/TemplateContext"
+          mkdir -p "$desktop"
+          cp bin/templatecontext.exe "$desktop/"
+          "$desktop/templatecontext.exe" version
+
+      - name: Install tailcat 0.7.0
+        env:
+          TAILCAT_SHA256: f04cac07e3bf6c700b0b543df0d3315a3b312cd5a05ee76714e1cc848e9b2dff
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'tailcat.zip'
+          Invoke-WebRequest -Uri 'https://github.com/tailscale/tailcat/releases/download/v0.7.0/tailcat_0.7.0_windows_amd64.zip' -OutFile $zip
+          if ((Get-FileHash -Algorithm SHA256 $zip).Hash -ne $env:TAILCAT_SHA256) { throw 'tailcat checksum mismatch' }
+          Expand-Archive $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'tailcat')
+
+      - name: Enable Remote Desktop
+        env:
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          Set-LocalUser -Name $env:USERNAME -Password (ConvertTo-SecureString $env:RDP_PASSWORD -AsPlainText -Force)
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 1
+          Set-Service TermService -StartupType Automatic
+          Start-Service TermService
+          for ($i = 0; $i -lt 30 -and -not (Get-NetTCPConnection -LocalPort 3389 -State Listen -ErrorAction SilentlyContinue); $i++) { Start-Sleep 1 }
+          if (-not (Get-NetTCPConnection -LocalPort 3389 -State Listen -ErrorAction SilentlyContinue)) { throw 'RDP is not listening' }
+          "RDP user: $env:USERNAME"
+
+      # tailcat prints its address on stderr; keep its output in files that are
+      # never shown.
+      - name: Serve RDP through tailcat until the session ends
+        env:
+          TAILCAT_SERVER_KEY: ${{ secrets.TAILCAT_SERVER_KEY }}
+          TAILCAT_ADDRESS: ${{ secrets.TAILCAT_ADDRESS }}
+          TAILCAT_ALLOW: ${{ vars.TAILCAT_ALLOW }}
+          MINUTES: ${{ inputs.minutes }}
+        run: |
+          $key = Join-Path $env:RUNNER_TEMP 'runner.private.json'
+          [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:TAILCAT_SERVER_KEY))
+          $log = Join-Path $env:RUNNER_TEMP 'tailcat.log'
+          $p = Start-Process -FilePath (Join-Path $env:RUNNER_TEMP 'tailcat\tailcat.exe') `
+            -ArgumentList 'serve', "--key=$key", "--allow=$env:TAILCAT_ALLOW", '3389' `
+            -RedirectStandardError $log -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP 'tailcat.out') `
+            -NoNewWindow -PassThru
+          "TAILCAT_PID=$($p.Id)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          for ($i = 0; $i -lt 60; $i++) {
+            if ($p.HasExited) { throw "tailcat exited with code $($p.ExitCode)" }
+            if ((Test-Path $log) -and (Select-String -Quiet -SimpleMatch 'Server listening' $log)) { break }
+            Start-Sleep 1
+          }
+          if (-not (Select-String -Quiet -SimpleMatch 'Server listening' $log)) { throw 'tailcat did not start listening' }
+          if (-not (Select-String -Quiet -SimpleMatch $env:TAILCAT_ADDRESS $log)) { throw 'tailcat is not serving the expected address' }
+          Remove-Item $key
+          # The runner ends a step's processes when the step exits, so the
+          # session waits here.
+          $deadline = (Get-Date).AddMinutes([int]$env:MINUTES)
+          "tailcat is serving RDP to the allowed client until $($deadline.ToUniversalTime().ToString('HH:mm')) UTC; create C:\end-session to finish early."
+          while ((Get-Date) -lt $deadline -and -not (Test-Path 'C:\end-session')) {
+            if ($p.HasExited) { throw "tailcat exited with code $($p.ExitCode)" }
+            Start-Sleep 60
+            "$([int]($deadline - (Get-Date)).TotalMinutes) minutes left"
+          }
+
+      - name: Stop tailcat
+        if: always()
+        run: |
+          if ($env:TAILCAT_PID) { Stop-Process -Id $env:TAILCAT_PID -Force -ErrorAction SilentlyContinue }
+          Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:RUNNER_TEMP 'runner.private.json')

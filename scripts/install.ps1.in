@@ -1,0 +1,53 @@
+# Installs a fixed TemplateContext release on Windows.
+# Usage: irm https://github.com/pocketcontext-labs/pocketcontext-template/releases/download/v@VERSION@/install.ps1 | iex
+# Target folder: $env:TEMPLATECONTEXT_INSTALL_DIR, for example inside OneDrive, iCloud
+# Drive, Dropbox or Google Drive; default %LOCALAPPDATA%\Programs\TemplateContext.
+& {
+    $ErrorActionPreference = 'Stop'
+    Set-StrictMode -Version 3
+    $version = '@VERSION@'
+    if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'templatecontext: invalid release version' }
+    if (-not [Environment]::Is64BitOperatingSystem) { throw 'templatecontext: 64-bit Windows is required' }
+    $arch = $env:PROCESSOR_ARCHITEW6432
+    if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
+    # Windows on ARM runs the amd64 build through emulation.
+    if ($arch -notin @('AMD64', 'ARM64')) { throw "templatecontext: unsupported architecture $arch" }
+    $dir = $env:TEMPLATECONTEXT_INSTALL_DIR
+    if (-not $dir) { $dir = Join-Path $env:LOCALAPPDATA 'Programs\TemplateContext' }
+    if (-not [System.IO.Path]::IsPathRooted($dir)) { throw 'templatecontext: the installation directory must be an absolute path' }
+    $archive = "templatecontext_${version}_windows_amd64.zip"
+    $base = "https://github.com/pocketcontext-labs/pocketcontext-template/releases/download/v$version"
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("templatecontext-install-" + [Guid]::NewGuid())
+    New-Item -ItemType Directory -Path $tmp | Out-Null
+    $stage = $null
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.txt" -OutFile "$tmp\checksums.txt"
+        $lines = @(Get-Content "$tmp\checksums.txt" | Where-Object { $_ -match "^([0-9a-f]{64})  $([regex]::Escape($archive))$" })
+        if ($lines.Count -ne 1) { throw 'templatecontext: archive is missing from checksums.txt' }
+        $expected = ($lines[0] -split '  ')[0]
+        Invoke-WebRequest -UseBasicParsing -Uri "$base/$archive" -OutFile "$tmp\$archive"
+        $actual = (Get-FileHash -Algorithm SHA256 "$tmp\$archive").Hash.ToLowerInvariant()
+        if ($actual -ne $expected) { throw 'templatecontext: archive checksum mismatch' }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipFile]::OpenRead("$tmp\$archive")
+        try {
+            # Compare as a set: Sort-Object orders names case-insensitively.
+            $names = @($zip.Entries | ForEach-Object { $_.FullName })
+            if ($names.Count -ne 2 -or -not ($names -ccontains 'templatecontext.exe') -or -not ($names -ccontains 'THIRD_PARTY_NOTICES.txt')) { throw 'templatecontext: unexpected release archive layout' }
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            $destination = Join-Path $dir 'templatecontext.exe'
+            $stage = Join-Path $dir ('.templatecontext-' + [Guid]::NewGuid() + '.exe')
+            # Extract only the executable into our own file name.
+            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($zip.GetEntry('templatecontext.exe'), $stage)
+        } finally { $zip.Dispose() }
+        if ((Get-Item $stage).Length -eq 0) { throw 'templatecontext: archive executable is empty' }
+        Unblock-File -Path $stage
+        Move-Item -Force -Path $stage -Destination $destination
+        Write-Output "Installed TemplateContext $version at $destination"
+        Write-Output "Next: & '$destination' init --email you@example.localhost   (the database templatecontext.db is created beside the binary)"
+    } finally {
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tmp
+        if ($stage -and (Test-Path $stage)) { Remove-Item -Force $stage }
+    }
+}

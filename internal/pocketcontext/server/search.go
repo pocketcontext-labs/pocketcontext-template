@@ -1,0 +1,182 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"sort"
+	"time"
+
+	"github.com/pocketbase/pocketbase/apis"
+	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketcontext-labs/pocketcontext-template/internal/pocketcontext/searchread"
+	"github.com/pocketcontext-labs/pocketcontext-template/internal/pocketcontext/sqlread"
+	"github.com/pocketcontext-labs/pocketcontext-template/internal/pocketcontext/tracing"
+)
+
+// Search indexes may only contain fields already exposed by shared SQL. Actual
+// index contents remain the responsibility of trusted application maintenance.
+func validateSearchSources(app core.App, cfg searchread.Config, schema []sqlread.Table) error {
+	allowed := make(map[string]map[string]bool, len(schema))
+	for _, table := range schema {
+		columns := make(map[string]bool, len(table.Columns))
+		for _, column := range table.Columns {
+			columns[column.Name] = true
+		}
+		allowed[table.Name] = columns
+	}
+	for alias, index := range cfg.Indexes {
+		if searchread.IsPrivate(index) {
+			for _, pair := range privateSources(index) {
+				c, err := app.FindCollectionByNameOrId(pair[0])
+				if err != nil || c.Name != pair[0] || !c.IsBase() || c.System {
+					return fmt.Errorf("search index %q requires non-system base source and scope collections", alias)
+				}
+				for _, name := range append([]string{"id"}, pair[1:]...) {
+					f := c.Fields.GetByName(name)
+					if !allowed[c.Name][name] || f == nil || f.GetHidden() {
+						return fmt.Errorf("search index %q field %q must be a configured nonhidden output column", alias, name)
+					}
+				}
+			}
+			continue
+		}
+		if _, err := app.FindCollectionByNameOrId(index.Table); err == nil {
+			return fmt.Errorf("search index %q table must not name a PocketBase collection", alias)
+		}
+		collection, err := app.FindCollectionByNameOrId(index.Collection)
+		if err != nil || collection.Name != index.Collection || !collection.IsBase() || collection.System {
+			return fmt.Errorf("search index %q requires a non-system source base collection", alias)
+		}
+		columns := allowed[index.Collection]
+		for _, name := range append([]string{"id"}, index.Columns...) {
+			field := collection.Fields.GetByName(name)
+			if !columns[name] || field == nil || field.GetHidden() {
+				return fmt.Errorf("search index %q source field %q must be SQL-readable and nonhidden", alias, name)
+			}
+		}
+		if index.Scope != nil && index.Generation != nil {
+			for _, pair := range [][2]string{{index.Scope.Collection, index.Scope.Field}, {index.Generation.Collection, index.Generation.Field}} {
+				c, err := app.FindCollectionByNameOrId(pair[0])
+				if err != nil || c.Name != pair[0] || !c.IsBase() || c.System {
+					return fmt.Errorf("search scope/generation requires non-system base collection")
+				}
+				for _, name := range []string{"id", pair[1]} {
+					f := c.Fields.GetByName(name)
+					if !allowed[c.Name][name] || f == nil || f.GetHidden() {
+						return fmt.Errorf("search scope/generation field must be SQL-readable and nonhidden")
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func privateSources(index searchread.Index) [][]string {
+	if index.SourceContent {
+		return searchread.SourceContentFields()
+	}
+	sources := [][]string{append([]string{index.Collection}, index.Columns...)}
+	if index.Scope != nil {
+		sources = append(sources, []string{index.Scope.Collection, index.Scope.Field})
+	}
+	return sources
+}
+
+type searchFunc func(ctx context.Context, requester string, req searchread.Request) (searchread.Result, error)
+
+func searchDiscovery(cfg searchread.Config, maxRows int) map[string]any {
+	aliases := make([]string, 0, len(cfg.Indexes))
+	for alias := range cfg.Indexes {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	limits := map[string]int{
+		"maxQueryBytes":   searchread.MaxQueryBytes,
+		"maxTerms":        searchread.MaxTerms,
+		"maxOffset":       searchread.MaxOffset,
+		"maxScopeMembers": searchread.MaxScopeMembers,
+		"maxLimit":        min(maxRows, searchread.MaxLimit),
+		"defaultLimit":    min(maxRows, searchread.DefaultLimit),
+	}
+	discovery := map[string]any{"indexes": aliases, "limits": limits}
+	// Shared configurations keep their existing discovery output.
+	for _, index := range cfg.Indexes {
+		if searchread.IsPrivate(index) {
+			discovery["isolation"] = searchread.IsolationPrivate
+			limits["maxIndexBytes"] = cfg.MaxIndexBytes
+			break
+		}
+	}
+	return discovery
+}
+
+func registerSearchRoute(app core.App, event *core.ServeEvent, cfg Config, search searchFunc) {
+	event.Router.POST("/api/context/search", func(re *core.RequestEvent) error {
+		re.Response.Header().Set("Cache-Control", "no-store")
+		var body searchread.Request
+		re.Request.Body = http.MaxBytesReader(re.Response, re.Request.Body, 65536)
+		decoder := json.NewDecoder(re.Request.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil {
+			return re.BadRequestError("Expected JSON with index, query and optional limit", nil)
+		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			return re.BadRequestError("Expected one JSON object", nil)
+		}
+		started := time.Now()
+		result, err := search(re.Request.Context(), re.Auth.Id, body)
+		if trace := tracing.From(re.Request.Context()); trace != nil {
+			trace.Rows, trace.Truncated = len(result.Hits), result.Truncated
+		}
+		alias := "<unknown>"
+		if _, configured := cfg.Search.Indexes[body.Index]; configured {
+			alias = body.Index
+		}
+		attrs := []any{"auth", re.Auth.Id, "collection", re.Auth.Collection().Name, "index", alias, "durationMs", time.Since(started).Milliseconds(), "rows", len(result.Hits), "truncated", result.Truncated}
+		if err != nil {
+			app.Logger().Warn("Context search rejected", attrs...)
+			switch {
+			case errors.Is(err, sqlread.ErrSnapshotRequesterLimit):
+				re.Response.Header().Set("Retry-After", "1")
+				return re.JSON(http.StatusTooManyRequests, map[string]string{"message": "Too many concurrent snapshot reads for this account"})
+			case errors.Is(err, context.DeadlineExceeded):
+				return re.JSON(http.StatusRequestTimeout, map[string]string{"message": "Search deadline exceeded"})
+			case errors.Is(err, searchread.ErrBusy):
+				re.Response.Header().Set("Retry-After", "1")
+				return re.JSON(http.StatusServiceUnavailable, map[string]string{"message": "Database busy; retry the search"})
+			case errors.Is(err, searchread.ErrScopeNotFound):
+				return re.JSON(http.StatusNotFound, map[string]string{"message": "Search scope not found"})
+			case errors.Is(err, searchread.ErrIndexLimit):
+				return re.JSON(http.StatusRequestEntityTooLarge, map[string]string{"message": "Authorized search content exceeds configured limits"})
+			case errors.Is(err, searchread.ErrGenerationConflict):
+				return re.JSON(http.StatusConflict, map[string]string{"message": "Search generation changed; restart results"})
+			case errors.Is(err, searchread.ErrIndexInvalid):
+				return re.JSON(http.StatusServiceUnavailable, map[string]string{"message": "Search index unavailable"})
+			case errors.Is(err, searchread.ErrResponseLimit):
+				return re.JSON(http.StatusRequestEntityTooLarge, map[string]string{"message": "Search result exceeds maxBytes"})
+			case errors.Is(err, searchread.ErrInvalidQuery):
+				return re.BadRequestError("Search request rejected", nil)
+			default:
+				return re.InternalServerError("Cannot search index", nil)
+			}
+		}
+		app.Logger().Info("Context search", attrs...)
+		encodeDone := tracing.Start(re.Request.Context(), "response.encode")
+		payload, err := json.Marshal(result)
+		encodeDone()
+		if err != nil {
+			return re.InternalServerError("Cannot encode search result", nil)
+		}
+		if len(payload) > cfg.MaxBytes {
+			return re.JSON(http.StatusRequestEntityTooLarge, map[string]string{"message": "Encoded search result exceeds maxBytes"})
+		}
+		re.Response.Header().Add("Access-Control-Expose-Headers", "X-Context-Truncated")
+		re.Response.Header().Set("X-Context-Truncated", fmt.Sprint(result.Truncated))
+		return re.Blob(http.StatusOK, "application/json", payload)
+	}).Bind(apis.RequireAuth(cfg.AuthCollection))
+}

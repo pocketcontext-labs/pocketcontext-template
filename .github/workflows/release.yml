@@ -1,0 +1,190 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build and validate (X.Y.Z); manual runs never publish'
+        required: true
+        default: '0.1.0'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+      publish: ${{ steps.release.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate release source and version
+        id: release
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: python3 scripts/release.py metadata --version "$REQUESTED_VERSION"
+      - name: Check release assembly and validation
+        run: python3 -B -m unittest discover -s tests -p test_release.py -v
+
+  native:
+    needs: metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_amd64
+            runner: ubuntu-24.04
+          - platform: linux_arm64
+            runner: ubuntu-24.04-arm
+          - platform: darwin_arm64
+            runner: macos-15
+          - platform: windows_amd64
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+      RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+      RELEASE_PLATFORM: ${{ matrix.platform }}
+      PY: ${{ matrix.platform == 'windows_amd64' && 'python' || 'python3' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.metadata.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Build and test the reader
+        working-directory: ui
+        run: |
+          npm install --global pnpm@10.33.2
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm test
+          pnpm build
+      # Windows runners provide MinGW-w64 gcc for CGO. The vendored server's
+      # upstream tests assume POSIX permissions, so Windows runs the bundle's own.
+      - name: Unit tests
+        run: |
+          packages=./...
+          if [ "$RUNNER_OS" = Windows ]; then packages="./internal/bundle ./internal/client ./internal/tunnel"; fi
+          CGO_ENABLED=1 go test -tags "$(cat build-tags.txt)" $packages
+      - name: Build and inspect the release binary; package notices
+        run: $PY scripts/release.py build --version "$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --platform "$RELEASE_PLATFORM" --output dist
+      - name: End-to-end test of the release binary
+        run: |
+          exe=templatecontext
+          if [ "$RUNNER_OS" = Windows ]; then exe=templatecontext.exe; fi
+          "dist/$RELEASE_PLATFORM/$exe" version | grep -F "templatecontext $RELEASE_VERSION ($RELEASE_COMMIT)"
+          "$PY" tests/name_check.py --binary "dist/$RELEASE_PLATFORM/$exe"
+          "$PY" tests/identity_check.py --binary "dist/$RELEASE_PLATFORM/$exe"
+          "$PY" tests/e2e.py --binary "dist/$RELEASE_PLATFORM/$exe"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-${{ matrix.platform }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  assemble:
+    needs: [metadata, native]
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+      RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.metadata.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: native-*
+          path: dist/native
+      - name: Assemble complete version-bound release
+        run: python3 scripts/release.py assemble --version "$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --artifacts dist/native --output dist/release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ needs.metadata.outputs.version }}
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [metadata, assemble]
+    if: needs.metadata.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: templatecontext-release-publication
+      cancel-in-progress: false
+    env:
+      RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+      RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.metadata.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-${{ needs.metadata.outputs.version }}
+          path: dist/release
+      - name: Upload, verify and publish immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release.py publish --version "$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --assets dist/release
+
+  # Install from the published release with the documented one-line installers,
+  # into a folder whose path contains spaces, and run the end-to-end test.
+  installed:
+    needs: [metadata, publish]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
+    runs-on: ${{ matrix.runner }}
+    env:
+      RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+      PY: ${{ matrix.runner == 'windows-2025' && 'python' || 'python3' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.metadata.outputs.commit }}
+          persist-credentials: false
+      - name: Install with install.sh
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          dir="$RUNNER_TEMP/Cloud Drive/TemplateContext"
+          curl -fsSL "https://github.com/pocketcontext-labs/pocketcontext-template/releases/download/v$RELEASE_VERSION/install.sh" | sh -s -- "$dir"
+          echo "EXE=$dir/templatecontext" >> "$GITHUB_ENV"
+      - name: Install with install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:TEMPLATECONTEXT_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'Cloud Drive\TemplateContext'
+          irm "https://github.com/pocketcontext-labs/pocketcontext-template/releases/download/v$env:RELEASE_VERSION/install.ps1" | iex
+          "EXE=$env:TEMPLATECONTEXT_INSTALL_DIR\templatecontext.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: End-to-end test of the installed binary
+        shell: bash
+        run: $PY tests/e2e.py --binary "$EXE"

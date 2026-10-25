@@ -1,0 +1,50 @@
+{
+  "authCollection": "users",
+  "tables": {
+    "greetings": [
+      "id",
+      "message",
+      "owner",
+      "created",
+      "updated"
+    ],
+    "user_directory": [
+      "id",
+      "name"
+    ]
+  },
+  "timeoutMs": 2000,
+  "maxRows": 500,
+  "maxBytes": 1048576,
+  "tracing": {
+    "enabled": false,
+    "service": "templatecontext",
+    "delivery": "buffer",
+    "captureSql": true,
+    "maxBytes": 16777216
+  },
+  "snapshot": {
+    "filters": {
+      "greetings": "greetings.owner = :requester",
+      "user_directory": "user_directory.id = :requester"
+    },
+    "timeoutMs": 5000,
+    "maxRows": 100000,
+    "maxBytes": 33554432,
+    "maxConcurrent": 4
+  },
+  "search": {
+    "maxIndexBytes": 8388608,
+    "cacheBytes": 67108864,
+    "indexes": {
+      "greetings": {
+        "isolation": "private",
+        "collection": "greetings",
+        "columns": [
+          "message"
+        ],
+        "snippetColumn": "message"
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+pb_data/
+.env*
+__pycache__/
+*.pyc
+vault/
+.private/
+ui/node_modules/
+ui/dist/
+ui/test-results/
+ui/playwright-report/
+ui/*.tsbuildinfo
+bin/
+dist/
+# Zig cross-compiles can leave an empty object file named "-.o".
+-.o
