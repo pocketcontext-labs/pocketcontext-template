@@ -156,6 +156,8 @@ CI (`.github/workflows/test.yml`) runs the reader, unit, name, identity and end-
 
 `scripts/release.py` and `.github/workflows/release.yml`: pushing a `vX.Y.Z` tag on `main` builds native static binaries on Linux amd64/arm64, macOS arm64 and Windows amd64, runs the name, identity and end-to-end checks against each, assembles `templatecontext_<version>_<platform>.tar.gz`/`.zip`, `install.sh`, `install.ps1` (from `scripts/install.sh.in` and `scripts/install.ps1.in`) and `checksums.txt`, publishes an immutable GitHub release, and then installs it with the one-line installers on every platform and tests again. A manual run of the workflow builds and validates without publishing.
 
+The template itself never publishes: while `template.json` is present, a tag push builds and validates every platform and stops before publishing. Template tags only mark versions for products to name in `docs/origin.md`; each product builds its own binary and, after deleting `template.json`, publishes its own releases.
+
 Once a product publishes releases, it installs with:
 
 ```sh

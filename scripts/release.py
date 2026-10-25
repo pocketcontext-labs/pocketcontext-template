@@ -33,6 +33,11 @@ GO_IMAGE = "golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308
 PACKAGE = "github.com/pocketcontext-labs/pocketcontext-template/internal/bundle"
 VERSION_RE = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z")
+# template.json marks the template itself (tests/identity_check.py). Its tags
+# only mark versions: users derive products from the source and build their
+# own binaries, so the template builds and validates but never publishes.
+# A derived product deletes the marker and publishes its tags.
+TEMPLATE_MARKER = ROOT / "template.json"
 # A static MinGW build may only import Windows system libraries.
 WINDOWS_DLLS = {"kernel32.dll", "advapi32.dll", "msvcrt.dll", "ws2_32.dll", "user32.dll", "shell32.dll", "ole32.dll",
                 "winmm.dll", "ntdll.dll", "userenv.dll", "bcrypt.dll", "bcryptprimitives.dll", "crypt32.dll", "iphlpapi.dll",
@@ -152,7 +157,10 @@ def metadata(args):
     if event == "push":
         require(output(["git", "rev-parse", f"{ref}^{{commit}}"], cwd=ROOT) == head,
                 "Tag does not identify the checked-out commit")
-    values = {"version": release_version, "commit": head, "publish": str(event == "push").lower()}
+    publish_release = event == "push" and not TEMPLATE_MARKER.is_file()
+    if event == "push" and not publish_release:
+        print("Template repository (template.json): building and validating only; nothing is published")
+    values = {"version": release_version, "commit": head, "publish": str(publish_release).lower()}
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
             for key, value in values.items():
@@ -428,6 +436,7 @@ def publish(args):
     require(os.environ.get("GITHUB_EVENT_NAME") == "push" and os.environ.get("GITHUB_REF") == f"refs/tags/{tag}",
             "Publishing is only permitted for the matching tag-push workflow")
     require(os.environ.get("GITHUB_REPOSITORY") == REPOSITORY, "Unexpected publishing repository")
+    require(not TEMPLATE_MARKER.is_file(), "The template never publishes releases (template.json is present)")
     require(remote_commit(tag) == revision, "Remote tag changed since validation")
     directory = Path(args.assets)
     expected = validate_assets(directory, release_version)

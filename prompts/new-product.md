@@ -24,7 +24,9 @@ Create the product as a sibling folder of the template, without its history or b
 ```sh
 cd <parent folder of pocketcontext-template>
 git -C pocketcontext-template status --porcelain   # must print nothing: the copy has to match a commit
-git -C pocketcontext-template log -1 --format='%H %cI'   # note the full SHA and date for section 4
+git -C pocketcontext-template fetch --tags --quiet   # template versions are tags (vX.Y.Z); there are no binary releases
+git -C pocketcontext-template describe --tags --always   # the template version: vX.Y.Z on a tag, vX.Y.Z-N-g<hash> after one
+git -C pocketcontext-template log -1 --format='%H %cI'   # note the version, full SHA and date for section 4
 rsync -a --exclude .git --exclude bin --exclude ui/dist --exclude node_modules --exclude ui/test-results \
   --exclude ui/playwright-report --exclude '*.tsbuildinfo' --exclude '__pycache__' --exclude '-.o' \
   pocketcontext-template/ <name>/
@@ -88,7 +90,7 @@ Replace `greetings` with the collections described above, following "Adding a co
 
 ## 4. Record the origin
 
-Rewrite `docs/origin.md` as the product's internal maintenance note: derived from `pocketcontext-labs/pocketcontext-template` at commit `$TEMPLATE_COMMIT` (full SHA and date), which itself derives from PocketContext and the vendored server at the commits the template's `docs/origin.md` and `internal/pocketcontext/VENDORED.md` name; what was kept, renamed, replaced and added. It is the one file allowed to mention the template identity, so say there that security fixes in the template, PocketContext and the vendored server must be ported by hand.
+Rewrite `docs/origin.md` as the product's internal maintenance note: derived from `pocketcontext-labs/pocketcontext-template` at the version, commit (full SHA) and date recorded in section 1, which itself derives from PocketContext and the vendored server at the commits the template's `docs/origin.md` and `internal/pocketcontext/VENDORED.md` name; what was kept, renamed, replaced and added. It is the one file allowed to mention the template identity, so say there that security fixes in the template, PocketContext and the vendored server must be ported by hand.
 
 ## 5. Check
 
