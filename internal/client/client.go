@@ -245,3 +245,10 @@ func Print(data any, pretty bool) {
 	_ = encoder.Encode(data)
 	os.Stdout.Write(buf.Bytes())
 }
+
+// SearchOptions select one bounded page of ranked results.
+type SearchOptions struct {
+	Limit      int
+	Offset     int
+	Generation string
+}

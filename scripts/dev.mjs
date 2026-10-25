@@ -254,7 +254,7 @@ export async function run(args, overrides = {}) {
   });
   await deps.access(vite).catch(() => {
     throw new Error(
-      "Install frontend dependencies first: pnpm --dir ui install --frozen-lockfile",
+      "Install frontend dependencies first: (cd ui && pnpm install --frozen-lockfile)",
     );
   });
   await deps.assertPortAvailable(options.port);

@@ -23,7 +23,7 @@ func TestNormalizeURL(t *testing.T) {
 		}
 	}
 	for _, in := range []string{"", "127.0.0.1:8098", "https://127.0.0.1:8098", "http://127.0.0.1", "http://127.0.0.1:0",
-		"http://127.0.0.1:70000", "http://127.0.0.1:08098", "http://example.com:8098", "http://10.0.0.1:8098", "http://[::1]:8098",
+		"http://127.0.0.1:70000", "http://127.0.0.1:09000", "http://example.com:8098", "http://10.0.0.1:8098", "http://[::1]:8098",
 		"http://127.0.0.1:8098/api", "http://127.0.0.1:8098?x=1", "http://127.0.0.1:8098/?", "http://u:p@127.0.0.1:8098",
 		"http://127.0.0.1:8098#x", "http://127.0.0.2:8098"} {
 		_, err := normalizeURL(in)
@@ -39,19 +39,20 @@ func TestSessionFile(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", cache)
 	t.Setenv("HOME", cache)
 	t.Setenv("LocalAppData", cache)
-	base := "http://127.0.0.1:8098"
+	// A fixed URL, not the default port, so a derived product's port leaves this known answer intact.
+	base := "http://127.0.0.1:9000"
 	path, err := sessionPath(base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// sha256("http://127.0.0.1:8098")[:16 hex]
-	if filepath.Base(filepath.Dir(path)) != "remote-dcb9023bccc08ee0" {
+	// sha256("http://127.0.0.1:9000")[:16 hex]
+	if filepath.Base(filepath.Dir(path)) != "remote-67d8ea34d836dea3" {
 		t.Fatalf("unexpected session directory %s", path)
 	}
 	if filepath.Base(filepath.Dir(filepath.Dir(path))) != "templatecontext" || filepath.Base(path) != "session.json" {
 		t.Fatalf("unexpected session path %s", path)
 	}
-	if other, _ := sessionPath("http://localhost:8098"); other == path {
+	if other, _ := sessionPath("http://localhost:9000"); other == path {
 		t.Fatal("different URLs share a session")
 	}
 	if s, err := loadSession(base); s != nil || err != nil {

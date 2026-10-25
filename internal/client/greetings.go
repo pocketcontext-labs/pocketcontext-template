@@ -46,13 +46,6 @@ func (c *Client) ListGreetings(limit int) ([]map[string]any, error) {
 	return c.Rows(fmt.Sprintf("SELECT %s FROM greetings ORDER BY created DESC, id DESC LIMIT %d", greetingColumns, limit))
 }
 
-// SearchOptions select one bounded page of ranked results.
-type SearchOptions struct {
-	Limit      int
-	Offset     int
-	Generation string
-}
-
 // Search ranks the signed-in account's greetings by full-text match of their message.
 func (c *Client) Search(term string, o SearchOptions) (map[string]any, error) {
 	if strings.TrimSpace(term) == "" || len(term) > 4096 || len(strings.Fields(term)) > 16 {

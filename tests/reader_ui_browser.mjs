@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Synthetic real-browser check of the built (embedded) reader. Run after
-// make ui && make build, and pnpm --dir ui exec playwright install chromium.
+// make ui && make build, and (cd ui && pnpm exec playwright install chromium).
 // No real project is opened. Options: --binary PATH, --browser PATH,
 // --screenshots DIR (keep screenshots there).
 import assert from 'node:assert/strict';
@@ -28,7 +28,9 @@ const screenshots = screenshotOption ? path.resolve(screenshotOption) : path.joi
 const home = path.join(temporary, 'home');
 const db = path.join(temporary, 'project', 'templatecontext.db');
 await Promise.all([mkdir(home), mkdir(path.dirname(db)), mkdir(screenshots, { recursive: true })]);
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('TEMPLATECONTEXT_')));
+// Inherited product variables would redirect the binary; scrub them as tests/e2e.py does.
+const scrubbed = ['TEMPLATECONTEXT_', 'POCKET' + 'CONTEXT_'];
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !scrubbed.some(prefix => key.startsWith(prefix))));
 Object.assign(env, { HOME: home, USERPROFILE: home, XDG_CACHE_HOME: path.join(home, 'cache'), LOCALAPPDATA: path.join(home, 'AppData', 'Local') });
 const children = [];
 let browser;

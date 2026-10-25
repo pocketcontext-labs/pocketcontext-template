@@ -133,16 +133,16 @@ Open the reader at the project port (18098 in this example) and sign in with the
 
 `node scripts/dev.mjs --db PATH --tunnel [--email EMAIL]` also runs `tunnel serve`, and prints the tunnel address and a one-time sign-in code for that account (default: the email in `templatecontext.json`), so a person on another computer can watch hot reload. They run `tunnel forward --address-stdin --url http://127.0.0.1:PORT` with the **same port** as the project and open `http://127.0.0.1:PORT/bundle/login#CODE`. The same-port rule is not optional: the server accepts only the Host `127.0.0.1:PORT` or `localhost:PORT`, and the development security policy pins the hot-reload WebSocket to `ws://127.0.0.1:PORT`, so a forward on any other port is refused. The address is printed on the terminal only; treat it as a secret.
 
-Hot reload does not type-check. Run `pnpm --dir ui typecheck`, `pnpm --dir ui test` and `pnpm --dir ui build` after changes, plus `node --test tests/dev_launcher.test.mjs` after launcher changes.
+Hot reload does not type-check. Run `pnpm typecheck`, `pnpm test` and `pnpm build` in `ui/` after changes, plus `node --test tests/dev_launcher.test.mjs` after launcher changes.
 
-The browser checks use synthetic data. Install their pinned Chromium once with `pnpm --dir ui exec playwright install chromium`, then run `node tests/reader_ui_browser.mjs --binary bin/templatecontext` (sign-in, adding, listing and searching at desktop and mobile widths; `--screenshots DIR` keeps screenshots) and `node tests/ui_dev_browser.mjs --binary bin/templatecontext` (hot reload and development routing, including a second browser behind a same-port loopback forward and the refusal of a forward on another port). Both accept `--browser /path/to/chromium`; `ui_dev_browser.mjs` also accepts `--playwright /absolute/path/to/playwright/index.mjs`. CI runs both on Linux amd64.
+The browser checks use synthetic data. Install their pinned Chromium once with `(cd ui && pnpm exec playwright install chromium)`, then run `node tests/reader_ui_browser.mjs --binary bin/templatecontext` (sign-in, adding, listing and searching at desktop and mobile widths; `--screenshots DIR` keeps screenshots) and `node tests/ui_dev_browser.mjs --binary bin/templatecontext` (hot reload and development routing, including a second browser behind a same-port loopback forward and the refusal of a forward on another port). Both accept `--browser /path/to/chromium`; `ui_dev_browser.mjs` also accepts `--playwright /absolute/path/to/playwright/index.mjs`. CI runs both on Linux amd64.
 
 ## Tests
 
 | Command | Checks |
 | --- | --- |
 | `make test` | Go unit tests with the tags in `build-tags.txt` (bundle, client, tunnel, vendored server, SQLite features), `tests/dev_launcher.test.mjs`, `tests/test_release.py` |
-| `pnpm --dir ui typecheck && pnpm --dir ui test` | reader types and unit tests (Vitest) |
+| `(cd ui && pnpm typecheck && pnpm test)` | reader types and unit tests (Vitest) |
 | `make names` | `tests/name_check.py`: the retired product name appears nowhere in the repository or binary |
 | `make identity` | `tests/identity_check.py`: no template identity left in a derived product (inverted in the template) |
 | `make e2e` | `tests/e2e.py`: init, CLI, ownership, SQL policy, search, skill, lease, conflict and recover, remote mode, tunnel and login codes, in a temporary folder |

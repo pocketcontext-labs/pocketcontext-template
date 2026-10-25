@@ -42,7 +42,8 @@ ALLOWED_BINARY = [
     # Same file, from gocloud.dev blob documentation (ETag field of blob attributes).
     ('https://en.' + NEEDLE + 'pedia.org/' + NEEDLE + '/HTTP_ETag', 'PocketBase jsvm types.d.ts (gocloud.dev blob docs)'),
     # Symbol names of tailscale.com/net/dns/publicdns variables, linked in by
-    # the tailcat tunnel; present only in unstripped builds.
+    # the tailcat tunnel; present only in unstripped builds without ts_omit_dns,
+    # so `make names` prints a harmless note that these entries were not found.
     ('tailscale.com/net/dns/publicdns.' + NEEDLE + 'mediaDNSv4Addr', 'tailscale.com publicdns symbol (tunnel)'),
     ('tailscale.com/net/dns/publicdns.' + NEEDLE + 'mediaDNSv6Addr', 'tailscale.com publicdns symbol (tunnel)'),
 ]

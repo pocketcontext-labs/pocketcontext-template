@@ -162,8 +162,8 @@ func TestSQLReaderDeniesSQLiteInternals(t *testing.T) {
 		CREATE VIRTUAL TABLE greetings_fts USING fts5(message);
 		INSERT INTO users VALUES ('alice0000000001','alice@example.localhost','hash-a','key-a'), ('bob000000000001','bob@example.localhost','hash-b','key-b');
 		INSERT INTO user_directory VALUES ('alice0000000001','Alice'), ('bob000000000001','Bob');
-		INSERT INTO greetings VALUES ('greeting0000001','Hello from Alice','alice0000000001','2026-01-01','2026-01-01'),
-			('greeting0000002','Hello from Bob','bob000000000001','2026-01-02','2026-01-02');
+		INSERT INTO greetings VALUES ('record000000001','Hello from Alice','alice0000000001','2026-01-01','2026-01-01'),
+			('record000000002','Hello from Bob','bob000000000001','2026-01-02','2026-01-02');
 		INSERT INTO greetings_fts(message) SELECT message FROM greetings;`); err != nil {
 		t.Fatal(err)
 	}

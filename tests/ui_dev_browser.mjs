@@ -45,7 +45,9 @@ const home = path.join(temporary, 'home');
 const ui = path.join(temporary, 'ui');
 const db = path.join(temporary, 'project', 'templatecontext.db');
 await Promise.all([mkdir(home), mkdir(ui), mkdir(path.dirname(db))]);
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('TEMPLATECONTEXT_')));
+// Inherited product variables would redirect the binary; scrub them as tests/e2e.py does.
+const scrubbed = ['TEMPLATECONTEXT_', 'POCKET' + 'CONTEXT_'];
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !scrubbed.some(prefix => key.startsWith(prefix))));
 Object.assign(env, { HOME: home, USERPROFILE: home, XDG_CACHE_HOME: path.join(home, 'cache'), LOCALAPPDATA: path.join(home, 'AppData', 'Local') });
 const children = [];
 const browsers = [];
@@ -102,8 +104,8 @@ async function startForward(routes) {
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
     socket.on('error', () => {});
-    socket.once('data', greeting => {
-      if (greeting[0] !== 5) return socket.destroy();
+    socket.once('data', handshake => {
+      if (handshake[0] !== 5) return socket.destroy();
       socket.write(Buffer.from([5, 0])); // No authentication.
       socket.once('data', request => {
         let host, port;
