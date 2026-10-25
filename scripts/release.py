@@ -33,11 +33,19 @@ GO_IMAGE = "golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308
 PACKAGE = "github.com/pocketcontext-labs/pocketcontext-template/internal/bundle"
 VERSION_RE = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z")
-# template.json marks the template itself (tests/identity_check.py). Its tags
-# only mark versions: users derive products from the source and build their
-# own binaries, so the template builds and validates but never publishes.
-# A derived product deletes the marker and publishes its tags.
+# template.json marks the template itself (tests/identity_check.py). Users
+# derive products from its source and build their own binaries, so a template
+# release still builds and validates every platform but publishes only the
+# new-product prompt, the source archive it downloads and checksums.txt. A
+# derived product deletes the marker and the prompt and publishes its binaries.
 TEMPLATE_MARKER = ROOT / "template.json"
+PROMPT_SOURCE = ROOT / "prompts" / "new-product.md"
+PROMPT = "new-product.md"
+PROMPT_PLACEHOLDERS = ("@VERSION@", "@COMMIT@", "@DATE@")
+
+
+def is_template():
+    return TEMPLATE_MARKER.is_file()
 # A static MinGW build may only import Windows system libraries.
 WINDOWS_DLLS = {"kernel32.dll", "advapi32.dll", "msvcrt.dll", "ws2_32.dll", "user32.dll", "shell32.dll", "ole32.dll",
                 "winmm.dll", "ntdll.dll", "userenv.dll", "bcrypt.dll", "bcryptprimitives.dll", "crypt32.dll", "iphlpapi.dll",
@@ -157,10 +165,8 @@ def metadata(args):
     if event == "push":
         require(output(["git", "rev-parse", f"{ref}^{{commit}}"], cwd=ROOT) == head,
                 "Tag does not identify the checked-out commit")
-    publish_release = event == "push" and not TEMPLATE_MARKER.is_file()
-    if event == "push" and not publish_release:
-        print("Template repository (template.json): building and validating only; nothing is published")
-    values = {"version": release_version, "commit": head, "publish": str(publish_release).lower()}
+    values = {"version": release_version, "commit": head, "publish": str(event == "push").lower(),
+              "template": str(is_template()).lower()}
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
             for key, value in values.items():
@@ -341,20 +347,71 @@ def assemble(args):
         archive = manifests[0].parent / name
         require(sha256(archive) == manifest.get("sha256"), f"Artifact checksum mismatch for {target}")
         check_archive(archive, target)
-        shutil.copyfile(archive, destination / name)
-    for installer in INSTALLERS:
-        template = (ROOT / "scripts" / (installer + ".in")).read_text(encoding="utf-8")
-        require("@VERSION@" in template, f"{installer} version placeholder is missing")
-        rendered = template.replace("@VERSION@", release_version)
-        (destination / installer).write_bytes(rendered.encode("utf-8"))
-    (destination / "install.sh").chmod(0o755)
+        if not is_template():
+            shutil.copyfile(archive, destination / name)
+    if is_template():
+        write_source(destination, release_version, revision)
+        date = output(["git", "show", "-s", "--format=%cI", revision], cwd=ROOT)
+        (destination / PROMPT).write_bytes(render_prompt(release_version, revision, date).encode("utf-8"))
+    else:
+        write_installers(destination, release_version)
     files = sorted(destination.iterdir())
     (destination / "checksums.txt").write_text("".join(f"{sha256(path)}  {path.name}\n" for path in files), encoding="utf-8")
     validate_assets(destination, release_version)
     print(f"Assembled {len(files) + 1} assets for v{release_version}")
 
 
+def render_prompt(release_version, revision, date):
+    text = PROMPT_SOURCE.read_text(encoding="utf-8")
+    for placeholder, value in zip(PROMPT_PLACEHOLDERS, (release_version, revision, date)):
+        require(placeholder in text, f"new-product prompt placeholder {placeholder} is missing")
+        text = text.replace(placeholder, value)
+    return text
+
+
+def source_name(release_version):
+    return f"{REPOSITORY.split('/')[1]}-{release_version}"
+
+
+def write_source(destination, release_version, revision):
+    """The committed tree at the release commit, as name-version/ in a .tar.gz."""
+    prefix = source_name(release_version) + "/"
+    tree = subprocess.run(["git", "archive", "--format=tar", f"--prefix={prefix}", revision],
+                          cwd=ROOT, check=True, capture_output=True).stdout
+    with (destination / f"{source_name(release_version)}.tar.gz").open("wb") as raw, \
+            gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
+        compressed.write(tree)
+
+
+def check_source(archive, release_version):
+    prefix = source_name(release_version) + "/"
+    with tarfile.open(archive, "r:gz") as bundle:
+        names = {}
+        for entry in bundle.getmembers():
+            if entry.name == "pax_global_header" and entry.type == tarfile.XGLTYPE:
+                continue
+            if entry.name == prefix.rstrip("/") and entry.isdir():
+                continue
+            require(entry.name.startswith(prefix) and ".." not in entry.name.split("/")
+                    and (entry.isreg() or entry.isdir()), f"Unexpected source archive member: {entry.name}")
+            names[entry.name.removeprefix(prefix)] = entry
+    for required in ("template.json", "go.mod", "prompts/new-product.md"):
+        require(required in names and names[required].isreg(), f"Source archive lacks {required}")
+    require(not any(name == ".git" or name.startswith(".git/") for name in names), "Source archive contains .git")
+
+
+def write_installers(destination, release_version):
+    for installer in INSTALLERS:
+        template = (ROOT / "scripts" / (installer + ".in")).read_text(encoding="utf-8")
+        require("@VERSION@" in template, f"{installer} version placeholder is missing")
+        rendered = template.replace("@VERSION@", release_version)
+        (destination / installer).write_bytes(rendered.encode("utf-8"))
+    (destination / "install.sh").chmod(0o755)
+
+
 def expected_names(release_version):
+    if is_template():
+        return {PROMPT, f"{source_name(release_version)}.tar.gz", "checksums.txt"}
     return {archive_name(release_version, target) for target in PLATFORMS} | set(INSTALLERS) | {"checksums.txt"}
 
 
@@ -371,8 +428,14 @@ def validate_assets(directory, release_version):
     require(set(checksums) == names - {"checksums.txt"}, "Checksum manifest has missing or unexpected assets")
     for name, digest in checksums.items():
         require(sha256(directory / name) == digest, f"Checksum mismatch: {name}")
-    for target in PLATFORMS:
-        check_archive(directory / archive_name(release_version, target), target)
+    if is_template():
+        text = (directory / PROMPT).read_text(encoding="utf-8")
+        require(not any(placeholder in text for placeholder in PROMPT_PLACEHOLDERS), "The released prompt has unfilled placeholders")
+        require(f"/{source_name(release_version)}.tar.gz" in text, "The released prompt must download its own source archive")
+        check_source(directory / f"{source_name(release_version)}.tar.gz", release_version)
+    else:
+        for target in PLATFORMS:
+            check_archive(directory / archive_name(release_version, target), target)
     return {name: sha256(directory / name) for name in names}
 
 
@@ -436,7 +499,6 @@ def publish(args):
     require(os.environ.get("GITHUB_EVENT_NAME") == "push" and os.environ.get("GITHUB_REF") == f"refs/tags/{tag}",
             "Publishing is only permitted for the matching tag-push workflow")
     require(os.environ.get("GITHUB_REPOSITORY") == REPOSITORY, "Unexpected publishing repository")
-    require(not TEMPLATE_MARKER.is_file(), "The template never publishes releases (template.json is present)")
     require(remote_commit(tag) == revision, "Remote tag changed since validation")
     directory = Path(args.assets)
     expected = validate_assets(directory, release_version)
@@ -449,6 +511,17 @@ def publish(args):
             verify_remote(release, tag, expected)
             print(f"Published {tag} already matches all validated assets; no changes made")
             return
+    elif is_template():
+        base = f"https://github.com/{REPOSITORY}/releases/download/{tag}"
+        body = (f"TemplateContext {release_version}: the template for local *Context applications in one binary. "
+                "This release has no binaries: a coding agent derives your own product from the template's source "
+                "and builds it.\n\n"
+                f"Give an agent the prompt {base}/{PROMPT} with its first block filled in: product name, lowercase id, "
+                f"port and data model. It downloads {source_name(release_version)}.tar.gz, the template's source at "
+                f"this release, and checks it against checksums.txt.\n\n"
+                f"See the [README](https://github.com/{REPOSITORY}/blob/{tag}/README.md).\n\n{marker}")
+        release = api("releases", "POST", {"tag_name": tag, "target_commitish": revision,
+                      "name": f"TemplateContext {release_version}", "body": body, "draft": True, "prerelease": False})
     else:
         base = f"https://github.com/{REPOSITORY}/releases/download/{tag}"
         body = (f"TemplateContext {release_version}: a local application: server, reader and CLI in one binary.\n\n"

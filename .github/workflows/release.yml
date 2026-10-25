@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build and validate (X.Y.Z); manual runs, and every run in the template, never publish'
+        description: 'Version to build and validate (X.Y.Z); manual runs never publish'
         required: true
         default: '0.1.0'
         type: string
@@ -22,6 +22,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       commit: ${{ steps.release.outputs.commit }}
       publish: ${{ steps.release.outputs.publish }}
+      template: ${{ steps.release.outputs.template }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -158,6 +159,7 @@ jobs:
   # into a folder whose path contains spaces, and run the end-to-end test.
   installed:
     needs: [metadata, publish]
+    if: needs.metadata.outputs.template != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -188,3 +190,34 @@ jobs:
       - name: End-to-end test of the installed binary
         shell: bash
         run: $PY tests/e2e.py --binary "$EXE"
+
+  # The template publishes no binaries: follow the released prompt's download
+  # steps from the public URLs and compare the source with the release commit.
+  template-source:
+    needs: [metadata, publish]
+    if: needs.metadata.outputs.template == 'true'
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+      RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.metadata.outputs.commit }}
+          path: checkout
+          persist-credentials: false
+      - name: Download, verify and compare the released source
+        run: |
+          base="https://github.com/pocketcontext-labs/pocketcontext-template/releases/download/v$RELEASE_VERSION"
+          name="pocketcontext-template-$RELEASE_VERSION"
+          mkdir published && cd published
+          curl -fsSLO "$base/new-product.md"
+          curl -fsSLO "$base/$name.tar.gz"
+          curl -fsSLO "$base/checksums.txt"
+          sha256sum -c checksums.txt
+          grep -F "base=$base" new-product.md
+          grep -F "$name.tar.gz" new-product.md
+          grep -F "$RELEASE_COMMIT" new-product.md
+          ! grep -E '@(VERSION|COMMIT|DATE)@' new-product.md
+          tar -xzf "$name.tar.gz"
+          diff -r --exclude=.git "$name" ../checkout

@@ -1,6 +1,8 @@
-# New product from pocketcontext-template
+# New product from pocketcontext-template @VERSION@
 
-Copy this prompt, fill in the first block, and give it to a coding agent that can run shell commands in the folder that contains a checkout of `pocketcontext-template`.
+Fill in the first block and give this prompt to a coding agent that can run shell commands, in the folder where the product's folder should be created. The agent downloads the template's source itself; no checkout is needed.
+
+This prompt is published with every template release, with its version, commit and date filled in: https://github.com/pocketcontext-labs/pocketcontext-template/releases/latest/download/new-product.md (the newest), or `releases/download/vX.Y.Z/new-product.md` for one version. Use a released copy: in the repository the `@`-placeholders are not filled in.
 
 ```text
 Make a new product named <Name> (lowercase <name>, default port <port>) from pocketcontext-template, with this data model: <description>.
@@ -13,29 +15,35 @@ Below, `<Name>` is the display name (for example `NoteContext`), `<name>` the lo
 
 You are turning the template repository `pocketcontext-template` into a new local application, **<Name>**. The template is a complete, working product with a placeholder identity (TemplateContext, `templatecontext`, port 8098) and a hello-world data model (`greetings`). Your job is to rename every identity item, replace the hello-world model with the data model above end to end, and prove with the template's own checks that nothing of the template identity is left.
 
-## 0. Read first
+## 0. Copy
 
-In the template, read `AGENTS.md`, `README.md`, `docs/data-model.md`, `docs/origin.md`, `template.json`, `server.json`, `pb_migrations/`, `pb_hooks/`, `internal/client/` (`commands.go`, `help.go`, `usage.go`, `greetings.go`) and `tests/e2e.py`. `AGENTS.md` holds the rules; they apply to the new product unchanged except for names, and you must keep them in its `AGENTS.md`.
-
-## 1. Copy
-
-Create the product as a sibling folder of the template, without its history or build output:
+This prompt belongs to template release @VERSION@: commit `@COMMIT@` of @DATE@. Download that release's source archive, check it against the release's `checksums.txt` and unpack it as the product's folder. `<name>` must not exist yet.
 
 ```sh
-cd <parent folder of pocketcontext-template>
-git -C pocketcontext-template status --porcelain   # must print nothing: the copy has to match a commit
-git -C pocketcontext-template fetch --tags --quiet   # template versions are tags (vX.Y.Z); there are no binary releases
-git -C pocketcontext-template describe --tags --always   # the template version: vX.Y.Z on a tag, vX.Y.Z-N-g<hash> after one
-git -C pocketcontext-template log -1 --format='%H %cI'   # note the version, full SHA and date for section 4
-rsync -a --exclude .git --exclude bin --exclude ui/dist --exclude node_modules --exclude ui/test-results \
-  --exclude ui/playwright-report --exclude '*.tsbuildinfo' --exclude '__pycache__' --exclude '-.o' \
-  pocketcontext-template/ <name>/
+base=https://github.com/pocketcontext-labs/pocketcontext-template/releases/download/v@VERSION@
+curl -fsSLO "$base/pocketcontext-template-@VERSION@.tar.gz"
+curl -fsSLO "$base/checksums.txt"
+grep ' pocketcontext-template-@VERSION@.tar.gz$' checksums.txt | sha256sum -c -   # on macOS: shasum -a 256 -c -
+tar -xzf pocketcontext-template-@VERSION@.tar.gz
+mv pocketcontext-template-@VERSION@ <name>
+rm pocketcontext-template-@VERSION@.tar.gz checksums.txt
 cd <name>
 git init -b main
+```
+
+Stop if the checksum does not match. Do not commit or push until the user asks.
+
+## 1. Read first
+
+In the new folder, read `AGENTS.md`, `README.md`, `docs/data-model.md`, `docs/origin.md`, `template.json`, `server.json`, `pb_migrations/`, `pb_hooks/`, `internal/client/` (`commands.go`, `help.go`, `usage.go`, `greetings.go`) and `tests/e2e.py`. `AGENTS.md` holds the rules; they apply to the new product unchanged except for names, and you must keep them in its `AGENTS.md`.
+
+Then remove the template marker and this prompt:
+
+```sh
 rm template.json prompts/new-product.md && rmdir prompts
 ```
 
-`template.json` marks the template; deleting it switches `tests/identity_check.py` from its inverted template mode to the real check. Do not commit or push until the user asks.
+`template.json` marks the template; deleting it switches `tests/identity_check.py` from its inverted template mode to the real check.
 
 ## 2. Rename the identity
 
@@ -90,7 +98,7 @@ Replace `greetings` with the collections described above, following "Adding a co
 
 ## 4. Record the origin
 
-Rewrite `docs/origin.md` as the product's internal maintenance note: derived from `pocketcontext-labs/pocketcontext-template` at the version, commit (full SHA) and date recorded in section 1, which itself derives from PocketContext and the vendored server at the commits the template's `docs/origin.md` and `internal/pocketcontext/VENDORED.md` name; what was kept, renamed, replaced and added. It is the one file allowed to mention the template identity, so say there that security fixes in the template, PocketContext and the vendored server must be ported by hand.
+Rewrite `docs/origin.md` as the product's internal maintenance note: derived from `pocketcontext-labs/pocketcontext-template` release @VERSION@ (commit `@COMMIT@` of @DATE@), which itself derives from PocketContext and the vendored server at the commits the template's `docs/origin.md` and `internal/pocketcontext/VENDORED.md` name; what was kept, renamed, replaced and added. It is the one file allowed to mention the template identity, so say there that security fixes in the template, PocketContext and the vendored server must be ported by hand.
 
 ## 5. Check
 
