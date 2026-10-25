@@ -317,7 +317,7 @@ def scenario(pc):
           'anonymous record listing returns no greetings')
     status, _ = pc.http('POST', '/api/bundle/token')
     check(status == 403, 'local tokens require the private key')
-    status, _ = pc.http('POST', '/api/bundle/login-code', {})
+    status, _ = pc.http('POST', '/api/bundle/login-code')
     check(status == 403, 'sign-in codes require the private key')
     link = pc.json('open', '--no-browser')['signInLink']
     check(link.startswith(pc.url + '/bundle/login#'), 'open prints a single-use sign-in link')
