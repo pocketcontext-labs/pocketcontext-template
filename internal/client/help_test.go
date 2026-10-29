@@ -69,7 +69,7 @@ func TestEveryCommandHasHelp(t *testing.T) {
 
 func TestDataHelpDocumentsShapes(t *testing.T) {
 	for command, wants := range map[string][]string{
-		"add":    {`"id"`, `"message"`, `"owner"`, "500"},
+		"add":    {`"id"`, `"message"`, `"created"`, "500"},
 		"list":   {`"message"`, "500"},
 		"search": {`"generation"`, `"greetings"`, `"nextOffset"`, "exit 4"},
 	} {

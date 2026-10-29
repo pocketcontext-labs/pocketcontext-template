@@ -10,7 +10,7 @@ function subscribe(change: () => void) {
 }
 function identity() {
   return pb.authStore.isValid && pb.authStore.record?.collectionName === "users"
-    ? `${pb.authStore.record.id}\n${pb.authStore.record.email ?? ""}`
+    ? pb.authStore.record.id
     : "";
 }
 
@@ -24,13 +24,11 @@ export default function App() {
     return () => window.removeEventListener("focus", renew);
   }, [signedIn]);
   if (!signedIn) return <SignIn />;
-  const [account, email] = signedIn.split("\n");
   return (
     <div className="app">
       <header className="topbar">
         <Brand />
         <div className="account">
-          {email && <span className="quiet">{email}</span>}
           <button
             type="button"
             className="secondary"
@@ -40,8 +38,8 @@ export default function App() {
           </button>
         </div>
       </header>
-      {/* Remount per account so no state survives a change of identity. */}
-      <main className="content" key={account}>
+      {/* Remount per session so no state survives a change of identity. */}
+      <main className="content" key={signedIn}>
         <Greetings />
         <Search />
       </main>

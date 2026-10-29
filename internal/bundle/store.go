@@ -108,6 +108,10 @@ func (s *Store) Open() error {
 	_, statErr := os.Stat(s.livePath())
 	haveLive := statErr == nil
 	if haveLive && s.state.Dirty {
+		// Unsaved changes of another release stay where they are, untouched.
+		if err := checkDatabase(s.livePath(), s.p.DB); err != nil {
+			return err
+		}
 		if !sameFile(synced, s.state.Base) {
 			return fmt.Errorf("%s changed (probably on another computer) while this computer had unsaved changes from an interrupted run; "+
 				"run `templatecontext recover --keep local` or `--keep synced`", s.p.DB)

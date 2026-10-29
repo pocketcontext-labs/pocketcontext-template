@@ -10,9 +10,8 @@ import { setTimeout as delay } from "node:timers/promises";
 const root = fileURLToPath(new URL("../", import.meta.url));
 export const DEFAULT_PORT = 8098;
 const usage =
-  "Usage: node scripts/dev.mjs --db PATH [--binary PATH] [--vite-port 5173] [--tunnel [--email EMAIL]]";
-const valued = ["--db", "--binary", "--vite-port", "--email"];
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  "Usage: node scripts/dev.mjs --db PATH [--binary PATH] [--vite-port 5173] [--tunnel]";
+const valued = ["--db", "--binary", "--vite-port"];
 
 export function parseOptions(args) {
   const options = {
@@ -40,18 +39,10 @@ export function parseOptions(args) {
     }
     const value = args[++i];
     if (name === "--vite-port") options.vitePort = validPort(Number(value));
-    else if (name === "--email") {
-      if (!emailPattern.test(value))
-        throw new Error("--email must look like name@example.localhost");
-      options.email = value.toLowerCase();
-    } else options[name.slice(2)] = resolve(value);
+    else options[name.slice(2)] = resolve(value);
   }
   if (!options.db)
     throw new Error(`An explicit development database is required. ${usage}`);
-  if (options.email && !options.tunnel)
-    throw new Error(
-      `--email selects the account for the --tunnel sign-in code. ${usage}`,
-    );
   return options;
 }
 
@@ -86,16 +77,7 @@ export async function projectOptions(options) {
   );
   if (port === options.vitePort)
     throw new Error("TemplateContext and Vite must use different ports");
-  const email =
-    options.email ??
-    (typeof config.email === "string" && config.email
-      ? config.email
-      : undefined);
-  if (options.tunnel && !email)
-    throw new Error(
-      "--tunnel issues a sign-in code: pass --email EMAIL or set the account email in templatecontext.json.",
-    );
-  return { ...options, db, port, ...(email ? { email } : {}) };
+  return { ...options, db, port };
 }
 
 export async function assertPortAvailable(port) {
@@ -116,7 +98,7 @@ export async function assertPortAvailable(port) {
  * Instructions for the person on the other computer. The address is printed
  * here, on this terminal only; it is never written to a log or file.
  */
-export function tunnelInstructions({ address, port, code, expires, email }) {
+export function tunnelInstructions({ address, port, code, expires }) {
   const url = `http://127.0.0.1:${port}`;
   const lines = [
     "",
@@ -133,12 +115,12 @@ export function tunnelInstructions({ address, port, code, expires, email }) {
   if (code) {
     lines.push(
       "",
-      `Sign-in code for ${email} (single use${expires ? `, expires ${expires}` : ""}):`,
+      `Sign-in code (single use${expires ? `, expires ${expires}` : ""}):`,
       "",
       `  ${code}`,
       "",
       `With the forward running, open ${url}/bundle/login#${code} there, or choose "Use a sign-in code instead" at ${url} and paste the code.`,
-      `For a new code run: templatecontext login-code --db PATH --email ${email}`,
+      "For a new code run: templatecontext login-code --db PATH",
     );
   }
   lines.push("");
@@ -365,7 +347,7 @@ export async function run(args, overrides = {}) {
       try {
         const issued = start(
           options.binary,
-          ["login-code", "--db", options.db, "--email", options.email],
+          ["login-code", "--db", options.db],
           { cwd: root, stdio: ["ignore", "pipe", "inherit"] },
         );
         code = JSON.parse(await collect(issued));
@@ -374,7 +356,7 @@ export async function run(args, overrides = {}) {
       } catch (error) {
         code = undefined;
         deps.log(
-          `Could not issue a sign-in code (${error.message}). Run templatecontext login-code --db PATH --email ${options.email}.`,
+          `Could not issue a sign-in code (${error.message}). Run templatecontext login-code --db PATH.`,
         );
       }
       if (controller.signal.aborted) return;
@@ -384,7 +366,6 @@ export async function run(args, overrides = {}) {
           port: options.port,
           code: code?.code,
           expires: code?.expires,
-          email: code?.email ?? options.email,
         }),
       );
     }

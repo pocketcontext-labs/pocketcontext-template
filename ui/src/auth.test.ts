@@ -34,7 +34,7 @@ afterEach(() => {
 describe("sign-in completion fences", () => {
   it.each(["cancel", "logout"])("cannot persist a delayed SDK result after %s", async action => {
     const pending = pendingPassword();
-    const attempt = api.loginPassword("reader@example.localhost", "synthetic-password");
+    const attempt = api.loginPassword("synthetic-password");
     const rejected = expect(attempt).rejects.toThrow(/cancel/i);
     if (action === "logout") api.logout();
     else api.cancelLogin();
@@ -46,7 +46,7 @@ describe("sign-in completion fences", () => {
   });
   it("does not replace an account that signed in while the attempt was pending", async () => {
     const pending = pendingPassword();
-    const attempt = api.loginPassword("reader@example.localhost", "synthetic-password");
+    const attempt = api.loginPassword("synthetic-password");
     const other = { ...record, id: "user00000000002" };
     api.pb.authStore.save("other-token", other);
     pending.resolve({ token, record });
@@ -56,7 +56,7 @@ describe("sign-in completion fences", () => {
   });
   it.each([null, key])("cancels an anonymous pending attempt on another tab’s logout (%s)", async storageKey => {
     const pending = pendingPassword();
-    const attempt = api.loginPassword("reader@example.localhost", "synthetic-password");
+    const attempt = api.loginPassword("synthetic-password");
     const rejected = expect(attempt).rejects.toThrow(/cancel/i);
     window.dispatchEvent(new StorageEvent("storage", { key: storageKey, storageArea: localStorage }));
     await rejected;
@@ -101,26 +101,27 @@ describe("SDK browser auth storage", () => {
 });
 
 describe("password and competing attempts", () => {
-  it("persists password login without opening a popup", async () => {
-    vi.spyOn(servicePrototype, "authWithPassword").mockResolvedValue({ token, record });
-    await api.loginPassword("reader@example.localhost", "synthetic-password");
+  it("persists password login to the project's account without opening a popup", async () => {
+    const password = vi.spyOn(servicePrototype, "authWithPassword").mockResolvedValue({ token, record });
+    await api.loginPassword("synthetic-password");
+    expect(password).toHaveBeenCalledWith(api.ACCOUNT_EMAIL, "synthetic-password");
     expect(window.open).not.toHaveBeenCalled();
     expect(api.pb.authStore.token).toBe(token);
     expect(JSON.parse(localStorage.getItem(key)!)).toMatchObject({ token, record });
   });
   it("keeps the newer identity after a superseded attempt completes", async () => {
     const first = pendingPassword();
-    const attempt = api.loginPassword("reader@example.localhost", "synthetic-password");
+    const attempt = api.loginPassword("synthetic-password");
     const rejected = expect(attempt).rejects.toThrow(/cancel/i);
     const other = { ...record, id: "user00000000002" };
     first.password.mockResolvedValueOnce({ token, record: other });
-    await api.loginPassword("other@example.localhost", "synthetic-password"); await rejected;
+    await api.loginPassword("synthetic-password"); await rejected;
     first.resolve({ token, record }); await first.promise; await Promise.resolve();
     expect(api.pb.authStore.record?.id).toBe(other.id);
   });
   it("reports a failed sign-in without storing a session", async () => {
     vi.spyOn(servicePrototype, "authWithPassword").mockRejectedValue(new Error("Failed to authenticate."));
-    await expect(api.loginPassword("reader@example.localhost", "wrong")).rejects.toThrow("Failed to authenticate.");
+    await expect(api.loginPassword("wrong")).rejects.toThrow("Failed to authenticate.");
     expect(api.pb.authStore.token).toBe("");
   });
 });

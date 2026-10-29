@@ -34,8 +34,7 @@ type marker struct {
 	Generation uint64 `json:"generation"`
 }
 
-// Controller owns the persistent database pools for one application. It must not
-// be shared with disposable filtered-query snapshot databases.
+// Controller owns the persistent database pools for one application.
 type Controller struct {
 	mu         sync.Mutex
 	transition sync.Mutex

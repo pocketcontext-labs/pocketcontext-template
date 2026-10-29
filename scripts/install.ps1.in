@@ -45,7 +45,7 @@
         Unblock-File -Path $stage
         Move-Item -Force -Path $stage -Destination $destination
         Write-Output "Installed TemplateContext $version at $destination"
-        Write-Output "Next: & '$destination' init --email you@example.localhost   (the database templatecontext.db is created beside the binary)"
+        Write-Output "Next: & '$destination' init   (asks for the reader password; the database templatecontext.db is created beside the binary)"
     } finally {
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tmp
         if ($stage -and (Test-Path $stage)) { Remove-Item -Force $stage }

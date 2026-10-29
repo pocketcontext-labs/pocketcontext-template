@@ -29,13 +29,13 @@ func validateSearchSources(app core.App, cfg searchread.Config, schema []sqlread
 		allowed[table.Name] = columns
 	}
 	for alias, index := range cfg.Indexes {
-		if searchread.IsPrivate(index) {
-			for _, pair := range privateSources(index) {
+		if searchread.Built(index) {
+			for _, pair := range searchread.BuiltSources(index) {
 				c, err := app.FindCollectionByNameOrId(pair[0])
 				if err != nil || c.Name != pair[0] || !c.IsBase() || c.System {
 					return fmt.Errorf("search index %q requires non-system base source and scope collections", alias)
 				}
-				for _, name := range append([]string{"id"}, pair[1:]...) {
+				for _, name := range pair[1:] {
 					f := c.Fields.GetByName(name)
 					if !allowed[c.Name][name] || f == nil || f.GetHidden() {
 						return fmt.Errorf("search index %q field %q must be a configured nonhidden output column", alias, name)
@@ -76,18 +76,7 @@ func validateSearchSources(app core.App, cfg searchread.Config, schema []sqlread
 	return nil
 }
 
-func privateSources(index searchread.Index) [][]string {
-	if index.SourceContent {
-		return searchread.SourceContentFields()
-	}
-	sources := [][]string{append([]string{index.Collection}, index.Columns...)}
-	if index.Scope != nil {
-		sources = append(sources, []string{index.Scope.Collection, index.Scope.Field})
-	}
-	return sources
-}
-
-type searchFunc func(ctx context.Context, requester string, req searchread.Request) (searchread.Result, error)
+type searchFunc func(ctx context.Context, req searchread.Request) (searchread.Result, error)
 
 func searchDiscovery(cfg searchread.Config, maxRows int) map[string]any {
 	aliases := make([]string, 0, len(cfg.Indexes))
@@ -103,16 +92,14 @@ func searchDiscovery(cfg searchread.Config, maxRows int) map[string]any {
 		"maxLimit":        min(maxRows, searchread.MaxLimit),
 		"defaultLimit":    min(maxRows, searchread.DefaultLimit),
 	}
-	discovery := map[string]any{"indexes": aliases, "limits": limits}
-	// Shared configurations keep their existing discovery output.
+	// Persisted-only configurations keep their existing discovery output.
 	for _, index := range cfg.Indexes {
-		if searchread.IsPrivate(index) {
-			discovery["isolation"] = searchread.IsolationPrivate
+		if searchread.Built(index) {
 			limits["maxIndexBytes"] = cfg.MaxIndexBytes
 			break
 		}
 	}
-	return discovery
+	return map[string]any{"indexes": aliases, "limits": limits}
 }
 
 func registerSearchRoute(app core.App, event *core.ServeEvent, cfg Config, search searchFunc) {
@@ -129,7 +116,7 @@ func registerSearchRoute(app core.App, event *core.ServeEvent, cfg Config, searc
 			return re.BadRequestError("Expected one JSON object", nil)
 		}
 		started := time.Now()
-		result, err := search(re.Request.Context(), re.Auth.Id, body)
+		result, err := search(re.Request.Context(), body)
 		if trace := tracing.From(re.Request.Context()); trace != nil {
 			trace.Rows, trace.Truncated = len(result.Hits), result.Truncated
 		}
@@ -141,9 +128,6 @@ func registerSearchRoute(app core.App, event *core.ServeEvent, cfg Config, searc
 		if err != nil {
 			app.Logger().Warn("Context search rejected", attrs...)
 			switch {
-			case errors.Is(err, sqlread.ErrSnapshotRequesterLimit):
-				re.Response.Header().Set("Retry-After", "1")
-				return re.JSON(http.StatusTooManyRequests, map[string]string{"message": "Too many concurrent snapshot reads for this account"})
 			case errors.Is(err, context.DeadlineExceeded):
 				return re.JSON(http.StatusRequestTimeout, map[string]string{"message": "Search deadline exceeded"})
 			case errors.Is(err, searchread.ErrBusy):
@@ -152,7 +136,7 @@ func registerSearchRoute(app core.App, event *core.ServeEvent, cfg Config, searc
 			case errors.Is(err, searchread.ErrScopeNotFound):
 				return re.JSON(http.StatusNotFound, map[string]string{"message": "Search scope not found"})
 			case errors.Is(err, searchread.ErrIndexLimit):
-				return re.JSON(http.StatusRequestEntityTooLarge, map[string]string{"message": "Authorized search content exceeds configured limits"})
+				return re.JSON(http.StatusRequestEntityTooLarge, map[string]string{"message": "Search content exceeds configured limits"})
 			case errors.Is(err, searchread.ErrGenerationConflict):
 				return re.JSON(http.StatusConflict, map[string]string{"message": "Search generation changed; restart results"})
 			case errors.Is(err, searchread.ErrIndexInvalid):

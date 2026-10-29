@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -126,8 +125,6 @@ func readPassword(fromStdin bool, confirm bool) (string, error) {
 	return string(first), nil
 }
 
-var emailPattern = regexp.MustCompile(`^[^@\s]+@[^@\s]+$`)
-
 // Run executes one command and returns the process exit code.
 func Run(argv []string) int {
 	if err := run(argv); err != nil {
@@ -196,10 +193,10 @@ parsed:
 		"ensure-running": {nil, {"take-over"}},
 		"stop":           {nil, nil},
 		"status":         {nil, nil},
-		"open":           {{"email"}, {"no-browser"}},
+		"open":           {nil, {"no-browser"}},
 		"flush":          {nil, nil},
 		"recover":        {{"keep"}, nil},
-		"init":           {{"email", "name", "port"}, {"password-stdin"}},
+		"init":           {{"port"}, {"password-stdin"}},
 		"password":       {nil, {"password-stdin"}},
 		"skill":          {{"agent", "dir"}, nil},
 		"whoami":         {nil, nil},
@@ -209,9 +206,8 @@ parsed:
 		"add":            {nil, nil},
 		"list":           {{"limit"}, nil},
 		"search":         {{"limit", "offset", "generation"}, nil},
-		"account":        {{"email", "name"}, {"password-stdin"}},
-		"login-code":     {{"email", "ttl"}, nil},
-		"login":          {{"email"}, {"password-stdin", "code-stdin"}},
+		"login-code":     {{"ttl"}, nil},
+		"login":          {nil, {"password-stdin", "code-stdin"}},
 		"logout":         {nil, nil},
 		"tunnel":         {nil, {"new-address", "address-stdin"}},
 	}
@@ -306,33 +302,19 @@ parsed:
 		if err != nil {
 			return err
 		}
-		c, err := New(p)
-		if err != nil {
-			return err
-		}
-		me, err := c.Must("POST", "/api/collections/users/auth-refresh", nil)
-		if err != nil {
-			return err
-		}
-		email, _ := dig(me, "record", "email").(string)
-		if _, err := bundle.LocalCall(p, "/api/bundle/account", map[string]string{"email": email, "password": password}); err != nil {
+		if err := bundle.EnsureRunning(p, bundle.StartOptions{}); err != nil {
 			return fail(1, "%v", err)
 		}
-		Print(map[string]any{"email": email, "password": "changed"}, pretty)
+		if _, err := bundle.LocalCall(p, "/api/bundle/password", map[string]string{"password": password}); err != nil {
+			return fail(1, "%v", err)
+		}
+		Print(map[string]any{"password": "changed"}, pretty)
 		return nil
 	case "open":
 		if err := bundle.EnsureRunning(p, bundle.StartOptions{}); err != nil {
 			return fail(1, "%v", err)
 		}
-		body := map[string]any{}
-		if a.has("email") {
-			email := strings.ToLower(a.flags["email"])
-			if !emailPattern.MatchString(email) {
-				return fail(2, "usage: templatecontext open [--email EMAIL] [--no-browser]")
-			}
-			body["email"] = email
-		}
-		data, err := bundle.LocalCall(p, "/api/bundle/login-code", body)
+		data, err := bundle.LocalCall(p, "/api/bundle/login-code", map[string]any{})
 		if err != nil {
 			return fail(1, "%v", err)
 		}
@@ -344,8 +326,6 @@ parsed:
 		}
 		Print(map[string]any{"url": p.URL(), "signInLink": link, "note": "single-use link, valid for 2 minutes"}, pretty)
 		return nil
-	case "account":
-		return createAccount(p, a, pretty)
 	case "login-code":
 		return loginCode(p, a, pretty)
 	case "skill":
@@ -360,7 +340,7 @@ parsed:
 
 // localOnly are the server and project commands that need the local database.
 var localOnly = map[string]bool{"serve": true, "start": true, "ensure-running": true, "stop": true, "flush": true,
-	"recover": true, "init": true, "password": true, "account": true, "login-code": true}
+	"recover": true, "init": true, "password": true, "login-code": true}
 
 // runRemote runs a command against a forwarded server. It never resolves a
 // database or starts a server.
@@ -386,21 +366,18 @@ func runRemote(base, command string, a *args, pretty bool) error {
 		var out map[string]any
 		var err error
 		if a.bools["code-stdin"] {
-			if a.has("email") || a.bools["password-stdin"] {
-				return fail(2, "usage: templatecontext login --url URL --code-stdin (the code names the account; no --email or --password-stdin)")
+			if a.bools["password-stdin"] {
+				return fail(2, "usage: templatecontext login --url URL (--code-stdin | [--password-stdin])")
 			}
 			out, err = loginWithCode(base)
 		} else {
-			out, err = login(base, a.flags["email"], a.bools["password-stdin"])
+			out, err = login(base, a.bools["password-stdin"])
 		}
 		if err != nil {
 			return err
 		}
 		Print(out, pretty)
 		return nil
-	}
-	if command == "open" && a.has("email") {
-		return fail(2, "open --email is not available with --url: run `templatecontext open --email EMAIL --no-browser` on the agent computer and open the printed link here")
 	}
 	s, err := loadSession(base)
 	if err != nil {
@@ -416,7 +393,7 @@ func runRemote(base, command string, a *args, pretty bool) error {
 				fmt.Fprintln(os.Stderr, "could not open a browser:", err)
 			}
 		}
-		Print(map[string]any{"url": base, "note": "sign in with your email and password, or open a sign-in link from `templatecontext open --email EMAIL --no-browser` on the agent computer"}, pretty)
+		Print(map[string]any{"url": base, "note": "sign in with the password, or open a sign-in link from `templatecontext open --no-browser` on the agent computer"}, pretty)
 		return nil
 	case "skill":
 		return installSkills("", base, a.flags["agent"], a.flags["dir"], pretty)
@@ -438,7 +415,7 @@ func runData(c *Client, command string, a *args, pretty bool) error {
 		if err != nil {
 			return err
 		}
-		out := map[string]any{"id": dig(me, "record", "id"), "name": dig(me, "record", "name"), "email": dig(me, "record", "email"), "url": c.Base}
+		out := map[string]any{"id": dig(me, "record", "id"), "url": c.Base}
 		if c.DB != "" {
 			out["db"] = c.DB
 		}
@@ -506,44 +483,13 @@ func runData(c *Client, command string, a *args, pretty bool) error {
 	return nil
 }
 
-// createAccount creates another account on this server, or resets its
-// password, so that a person working remotely signs in as themselves.
-func createAccount(p *bundle.Project, a *args, pretty bool) error {
-	email := strings.ToLower(a.flags["email"])
-	if !emailPattern.MatchString(email) {
-		return fail(2, "usage: templatecontext account --email EMAIL [--name NAME] [--password-stdin]")
-	}
-	// Without --password-stdin no password is sent: a new account gets a random
-	// one nobody knows (sign in with `login-code`), an existing one keeps its own.
-	password := ""
-	if a.bools["password-stdin"] {
-		var err error
-		if password, err = readPassword(true, false); err != nil {
-			return err
-		}
-		if password == "" {
-			return fail(2, "no password on standard input")
-		}
-	}
-	if err := bundle.EnsureRunning(p, bundle.StartOptions{}); err != nil {
-		return fail(1, "%v", err)
-	}
-	result, err := bundle.LocalCall(p, "/api/bundle/account", map[string]string{"email": email, "name": a.flags["name"], "password": password})
-	if err != nil {
-		return fail(1, "%v", err)
-	}
-	Print(map[string]any{"id": result["id"], "email": result["email"], "created": result["created"]}, pretty)
-	return nil
-}
-
 // loginCodeTTL is the default lifetime of a code from `login-code`, in seconds.
 const loginCodeTTL = 600
 
 // loginCode issues a one-time sign-in code for `login --url URL --code-stdin`.
 func loginCode(p *bundle.Project, a *args, pretty bool) error {
-	email := strings.ToLower(a.flags["email"])
-	if !emailPattern.MatchString(email) {
-		return fail(2, "usage: templatecontext login-code --email EMAIL [--ttl SECONDS]")
+	if len(a.pos) != 0 {
+		return fail(2, "usage: templatecontext login-code [--ttl SECONDS]")
 	}
 	ttl, err := a.intFlag("ttl", loginCodeTTL)
 	if err != nil {
@@ -555,32 +501,23 @@ func loginCode(p *bundle.Project, a *args, pretty bool) error {
 	if err := bundle.EnsureRunning(p, bundle.StartOptions{}); err != nil {
 		return fail(1, "%v", err)
 	}
-	result, err := bundle.LocalCall(p, "/api/bundle/login-code", map[string]any{"email": email, "ttl": ttl})
+	result, err := bundle.LocalCall(p, "/api/bundle/login-code", map[string]any{"ttl": ttl})
 	if err != nil {
 		return fail(1, "%v", err)
 	}
-	Print(map[string]any{"email": result["email"], "code": result["code"], "expires": result["expires"]}, pretty)
+	Print(map[string]any{"code": result["code"], "expires": result["expires"]}, pretty)
 	return nil
 }
 
 func initProject(p *bundle.Project, a *args, pretty bool) error {
 	_, statErr := os.Stat(p.ConfigPath)
 	fresh := errors.Is(statErr, os.ErrNotExist)
-	if email := a.flags["email"]; email != "" {
-		if !emailPattern.MatchString(email) {
-			return fail(2, "--email must look like name@example.com (any local address works, e.g. you@example.localhost)")
-		}
-		p.Config.Email = strings.ToLower(email)
-	}
 	if a.has("port") {
 		port, err := a.intFlag("port", 0)
 		if err != nil || port < 1024 || port > 65535 {
 			return fail(2, "--port must be 1024-65535")
 		}
 		p.Config.Port = port
-	}
-	if p.Config.Email == "" {
-		return fail(2, "init needs --email for the local account (any address, e.g. you@example.localhost)")
 	}
 	if err := os.MkdirAll(p.Dir, 0755); err != nil {
 		return err
@@ -594,19 +531,22 @@ func initProject(p *bundle.Project, a *args, pretty bool) error {
 	if err := bundle.EnsureRunning(p, bundle.StartOptions{}); err != nil {
 		return fail(1, "%v", err)
 	}
-	// An existing account (for example created on another computer) keeps its password.
+	// An existing account (for example created on another computer) keeps its
+	// password unless a new one arrives on standard input.
 	_, existsErr := bundle.LocalCall(p, "/api/bundle/token", map[string]any{})
-	created := false
-	if existsErr != nil || a.bools["password-stdin"] {
+	created := existsErr != nil
+	if created || a.bools["password-stdin"] {
 		password, err := readPassword(a.bools["password-stdin"], true)
 		if err != nil {
 			return err
 		}
-		result, err := bundle.LocalCall(p, "/api/bundle/account", map[string]string{"email": p.Config.Email, "name": a.flags["name"], "password": password})
-		if err != nil {
+		route := "/api/bundle/password"
+		if created {
+			route = "/api/bundle/account"
+		}
+		if _, err := bundle.LocalCall(p, route, map[string]string{"password": password}); err != nil {
 			return fail(1, "%v", err)
 		}
-		created, _ = result["created"].(bool)
 	}
 	if _, err := bundle.LocalCall(p, "/api/bundle/flush", map[string]any{}); err != nil {
 		return fail(1, "saving %s: %v", p.DB, err)
@@ -614,7 +554,7 @@ func initProject(p *bundle.Project, a *args, pretty bool) error {
 	if _, err := New(p); err != nil {
 		return err
 	}
-	Print(map[string]any{"db": p.DB, "config": p.ConfigPath, "storage": p.StorageDir(), "url": p.URL(), "email": p.Config.Email,
+	Print(map[string]any{"db": p.DB, "config": p.ConfigPath, "storage": p.StorageDir(), "url": p.URL(),
 		"accountCreated": created, "newProject": fresh, "next": "Run `templatecontext open` to sign in to the reader, and `templatecontext skill` to install the agent skills."}, pretty)
 	return nil
 }

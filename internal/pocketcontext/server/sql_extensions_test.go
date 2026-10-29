@@ -69,36 +69,3 @@ func TestSQLJSONAndPercentilesHTTP(t *testing.T) {
 		}
 	}
 }
-
-func TestSnapshotJSONPercentilesHTTP(t *testing.T) {
-	app, cfg, tokens, people := snapshotFixture(t)
-	h, err := startConfiguredRouter(t, app, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := `SELECT median(j.value) FROM compensation, json_each(json_array(salary)) AS j`
-	body, _ := json.Marshal(map[string]string{"sql": query})
-	check := func(name string, want any) {
-		t.Helper()
-		response := request(h, "POST", "/api/context/query", tokens[name], string(body))
-		var result sqlread.Result
-		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
-			t.Fatal(err)
-		}
-		if response.Code != http.StatusOK || response.Header().Get("X-Context-Scope") != "authorized-snapshot" || result.Truncated || len(result.Rows) != 1 || len(result.Rows[0]) != 1 || result.Rows[0][0] != want {
-			t.Fatalf("%s median: %d %s (want %v)", name, response.Code, response.Body, want)
-		}
-	}
-	check("hr", float64(125))
-	check("alice", float64(90))
-	check("bob", float64(80))
-	check("carol", nil)
-	if err := app.Delete(people["alice_bob"]); err != nil {
-		t.Fatal(err)
-	}
-	check("alice", float64(80))
-	if err := app.Delete(people["alice_carol"]); err != nil {
-		t.Fatal(err)
-	}
-	check("alice", nil)
-}

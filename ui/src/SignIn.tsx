@@ -4,8 +4,8 @@ import Brand from "./Brand";
 import { message } from "./errors";
 
 /**
- * Password sign-in, or a one-time code from `templatecontext login-code`
- * (for a person on another computer). `templatecontext open` signs in with a
+ * Sign-in to the project's one account with its password, or with a one-time
+ * code from `templatecontext login-code` (for a person on another computer). `templatecontext open` signs in with a
  * single-use link that the server redeems on /bundle/login.
  */
 export default function SignIn() {
@@ -29,10 +29,7 @@ export default function SignIn() {
     const form = new FormData(event.currentTarget);
     void attempt(() =>
       mode === "password"
-        ? api.loginPassword(
-            String(form.get("email")),
-            String(form.get("password")),
-          )
+        ? api.loginPassword(String(form.get("password")))
         : api.loginCode(String(form.get("code"))),
     );
   };
@@ -43,26 +40,15 @@ export default function SignIn() {
         <h1 id="sign-in-title">Sign in</h1>
         <form className="stack" onSubmit={submit} key={mode}>
           {mode === "password" ? (
-            <>
-              <label>
-                Email
-                <input
-                  required
-                  name="email"
-                  type="email"
-                  autoComplete="username"
-                />
-              </label>
-              <label>
-                Password
-                <input
-                  required
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                />
-              </label>
-            </>
+            <label>
+              Password
+              <input
+                required
+                name="password"
+                type="password"
+                autoComplete="current-password"
+              />
+            </label>
           ) : (
             <label>
               Sign-in code
@@ -101,8 +87,8 @@ export default function SignIn() {
           ) : (
             <>
               On the agent computer,{" "}
-              <code>templatecontext login-code --email EMAIL</code> issues a
-              code that works once.
+              <code>templatecontext login-code</code> issues a code that works
+              once.
             </>
           )}
         </p>

@@ -157,43 +157,29 @@ func TestSQLReaderDeniesSQLiteInternals(t *testing.T) {
 	defer db.Close()
 	if _, err := db.Exec(`PRAGMA journal_mode=WAL;
 		CREATE TABLE users(id TEXT PRIMARY KEY, email TEXT, password TEXT, tokenKey TEXT);
-		CREATE TABLE user_directory(id TEXT PRIMARY KEY, name TEXT);
-		CREATE TABLE greetings(id TEXT PRIMARY KEY, message TEXT, owner TEXT, created TEXT, updated TEXT);
+		CREATE TABLE greetings(id TEXT PRIMARY KEY, message TEXT, created TEXT, updated TEXT);
 		CREATE VIRTUAL TABLE greetings_fts USING fts5(message);
-		INSERT INTO users VALUES ('alice0000000001','alice@example.localhost','hash-a','key-a'), ('bob000000000001','bob@example.localhost','hash-b','key-b');
-		INSERT INTO user_directory VALUES ('alice0000000001','Alice'), ('bob000000000001','Bob');
-		INSERT INTO greetings VALUES ('record000000001','Hello from Alice','alice0000000001','2026-01-01','2026-01-01'),
-			('record000000002','Hello from Bob','bob000000000001','2026-01-02','2026-01-02');
+		INSERT INTO users VALUES ('account00000001','account@example.localhost','hash-a','key-a');
+		INSERT INTO greetings VALUES ('record000000001','Hello','2026-01-01','2026-01-01'),
+			('record000000002','Hello again','2026-01-02','2026-01-02');
 		INSERT INTO greetings_fts(message) SELECT message FROM greetings;`); err != nil {
 		t.Fatal(err)
 	}
 	queryCfg := sqlread.Config{Tables: cfg.Tables, Timeout: time.Duration(cfg.TimeoutMS) * time.Millisecond, MaxRows: cfg.MaxRows, MaxBytes: cfg.MaxBytes}
-	source, err := sqlread.NewSnapshotSource(path, queryCfg, *cfg.Snapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer source.Close()
-	// The engine without snapshots sees every table of the database file, so its
-	// authorizer alone must refuse the same statements.
+	// The reader queries the live database file, which holds every table, so
+	// its authorizer alone must refuse the statements below.
 	engine, err := sqlread.New(path, queryCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer engine.Close()
 	ctx := context.Background()
-	readers := map[string]func(string) (sqlread.Result, error){
-		"snapshot": func(q string) (sqlread.Result, error) {
-			r, _, err := source.Query(ctx, "alice0000000001", q)
-			return r, err
-		},
-		"engine": func(q string) (sqlread.Result, error) { return engine.Query(ctx, q) },
-	}
 
-	r, _, err := source.Query(ctx, "alice0000000001", "SELECT g.message, u.name FROM greetings g JOIN user_directory u ON u.id = g.owner")
-	if err != nil || len(r.Rows) != 1 || r.Rows[0][0] != "Hello from Alice" || r.Rows[0][1] != "Alice" {
-		t.Fatalf("requester-filtered read: %#v %v", r.Rows, err)
+	r, err := engine.Query(ctx, "SELECT message FROM greetings ORDER BY created")
+	if err != nil || len(r.Rows) != 2 || r.Rows[0][0] != "Hello" {
+		t.Fatalf("allowlisted read: %#v %v", r.Rows, err)
 	}
-	if r, err := readers["snapshot"]("SELECT median(length(message)), sqrt(4) FROM greetings"); err != nil || len(r.Rows) != 1 {
+	if r, err := engine.Query(ctx, "SELECT median(length(message)), sqrt(4) FROM greetings"); err != nil || len(r.Rows) != 1 {
 		t.Fatalf("math and percentile functions in the reader: %#v %v", r.Rows, err)
 	}
 
@@ -221,7 +207,8 @@ func TestSQLReaderDeniesSQLiteInternals(t *testing.T) {
 		"SELECT * FROM greetings_fts_config",
 		"SELECT password FROM users",
 		"SELECT * FROM users",
-		"INSERT INTO greetings(id, message, owner) VALUES ('x', 'y', 'alice0000000001')",
+		"SELECT email FROM users",
+		"INSERT INTO greetings(id, message) VALUES ('x', 'y')",
 		"UPDATE greetings SET message = 'changed'",
 		"DELETE FROM greetings",
 		"CREATE TABLE extra(id)",
@@ -232,11 +219,9 @@ func TestSQLReaderDeniesSQLiteInternals(t *testing.T) {
 		"SELECT load_extension('x')",
 		"SELECT 1; DELETE FROM greetings",
 	}
-	for name, read := range readers {
-		for _, query := range denied {
-			if r, err := read(query); err == nil {
-				t.Errorf("%s reader allowed %q: %#v", name, query, r.Rows)
-			}
+	for _, query := range denied {
+		if r, err := engine.Query(ctx, query); err == nil {
+			t.Errorf("reader allowed %q: %#v", query, r.Rows)
 		}
 	}
 	var n int

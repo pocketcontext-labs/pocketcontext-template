@@ -27,7 +27,6 @@ const DefaultDatabase = "templatecontext.db"
 // with the project, so it never contains credentials or machine-specific paths.
 type Config struct {
 	Port     int    `json:"port"`
-	Email    string `json:"email,omitempty"`
 	Instance string `json:"instance,omitempty"`
 }
 

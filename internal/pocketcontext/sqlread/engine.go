@@ -54,10 +54,9 @@ type Engine struct {
 }
 
 type connector struct {
-	driver       *sqlite3.SQLiteDriver
-	dsn          string
-	transactions bool
-	authorize    func(int, string, string, string) int
+	driver    *sqlite3.SQLiteDriver
+	dsn       string
+	authorize func(int, string, string, string) int
 }
 
 func (c connector) Connect(context.Context) (driver.Conn, error) {
@@ -68,47 +67,28 @@ func (c connector) Connect(context.Context) (driver.Conn, error) {
 	sqliteConn := conn.(*sqlite3.SQLiteConn)
 	// database/sql serializes each connection, including Conn.Raw. Keep the
 	// callback registered once: re-registering would retain driver handles.
-	trusted, jsonEach := new(bool), new(bool)
-	volatile := new(bool)
-	readTables := new(map[string]bool)
+	trusted := new(bool)
 	sqliteConn.RegisterAuthorizer(func(op int, a, b, db string) int {
-		if *readTables != nil && op == sqlite3.SQLITE_READ && (db == "main" || db == "") {
-			(*readTables)[strings.ToLower(a)] = true
-		}
-		if op == sqlite3.SQLITE_FUNCTION && volatileSnapshotFunction(b) {
-			*volatile = true
-		}
+		// Only Query's own transaction control and reserved-name check run trusted.
 		if *trusted {
-			return sqlite3.SQLITE_OK
-		}
-		// Trusted filtered reads bind ID lists through json_each only while
-		// SnapshotSource.ReadFiltered holds this connection.
-		if *jsonEach && op == sqlite3.SQLITE_READ && strings.EqualFold(a, "json_each") && jsonTableColumn(a, b) && (db == "main" || (db == "" && b == "")) {
 			return sqlite3.SQLITE_OK
 		}
 		return c.authorize(op, a, b, db)
 	})
-	return roConn{c: sqliteConn, transactions: c.transactions, trusted: trusted, jsonEach: jsonEach, volatile: volatile, readTables: readTables}, nil
+	return roConn{c: sqliteConn, trusted: trusted}, nil
 }
 func (c connector) Driver() driver.Driver { return c.driver }
 
 // roConn exposes only prepare, so database/sql cannot bypass the read-only
 // check. The check runs on the prepared statement itself, before any step.
 type roConn struct {
-	c            *sqlite3.SQLiteConn
-	transactions bool
-	volatile     *bool
-	trusted      *bool
-	jsonEach     *bool
-	readTables   *map[string]bool
+	c       *sqlite3.SQLiteConn
+	trusted *bool
 }
 
 func (r roConn) Close() error                   { return r.c.Close() }
 func (r roConn) Ping(ctx context.Context) error { return r.c.Ping(ctx) }
 func (r roConn) Begin() (driver.Tx, error) {
-	if r.transactions {
-		return r.c.Begin()
-	}
 	return nil, errors.New("transactions are not supported")
 }
 func (r roConn) Prepare(query string) (driver.Stmt, error) {
@@ -129,9 +109,7 @@ func (r roConn) PrepareContext(ctx context.Context, query string) (driver.Stmt, 
 // New opens an independent read-only connection. Tables must be ordinary tables;
 // views, virtual tables and internal names are rejected. An empty column list
 // exposes all current columns. Restart after changing the exposed schema.
-func New(path string, cfg Config) (*Engine, error) { return newEngine(path, cfg, false) }
-
-func newEngine(path string, cfg Config, transactions bool) (*Engine, error) {
+func New(path string, cfg Config) (*Engine, error) {
 	if len(cfg.Tables) == 0 {
 		return nil, errors.New("SQL read table allowlist is empty")
 	}
@@ -216,14 +194,10 @@ func newEngine(path string, cfg Config, transactions bool) (*Engine, error) {
 	sort.Slice(e.tables, func(i, j int) bool { return e.tables[i].Name < e.tables[j].Name })
 	authorize := func(op int, a, b, db string) int {
 		switch op {
-		case sqlite3.SQLITE_TRANSACTION:
-			if transactions {
-				return sqlite3.SQLITE_OK
-			}
 		case sqlite3.SQLITE_SELECT, 33: // SQLITE_RECURSIVE
 			return sqlite3.SQLITE_OK
 		case sqlite3.SQLITE_READ:
-			if !transactions && jsonTableColumn(a, b) && (db == "main" || (db == "" && b == "")) {
+			if jsonTableColumn(a, b) && (db == "main" || (db == "" && b == "")) {
 				return sqlite3.SQLITE_OK
 			}
 			// SQLite may omit database identity for optimized COUNT(*) reads.
@@ -250,7 +224,7 @@ func newEngine(path string, cfg Config, transactions bool) (*Engine, error) {
 		c.SetLimit(sqlite3.SQLITE_LIMIT_ATTACHED, 0)
 		return nil
 	}}
-	e.db = sql.OpenDB(connector{driver: d, dsn: u.String(), transactions: transactions, authorize: authorize})
+	e.db = sql.OpenDB(connector{driver: d, dsn: u.String(), authorize: authorize})
 	e.db.SetMaxOpenConns(4)
 	e.db.SetMaxIdleConns(4)
 	if err = e.db.PingContext(ctx); err != nil {

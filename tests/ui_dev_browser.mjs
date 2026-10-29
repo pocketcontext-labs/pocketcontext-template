@@ -166,8 +166,7 @@ try {
     await cp(path.join(root, 'ui', name), path.join(ui, name), { recursive: true });
   }
   await symlink(path.join(root, 'ui/node_modules'), path.join(ui, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
-  await cli(['init', '--email', 'browser@example.localhost', '--name', 'Browser Test', '--port', String(port), '--password-stdin'], 'synthetic browser password\n');
-  await cli(['account', '--email', 'remote@example.localhost', '--name', 'Remote Person']);
+  await cli(['init', '--port', String(port), '--password-stdin'], 'synthetic browser password\n');
   await cli(['stop']);
   const startVite = () => start(process.execPath, [path.join(root, 'ui/node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(vitePort)], {
     cwd: ui, env: { ...process.env, TEMPLATECONTEXT_DEV_PORT: String(port) },
@@ -235,15 +234,13 @@ try {
   remote.on('pageerror', error => remoteErrors.push(error.message));
   await remote.goto(origin);
   // The remote person signs in with a one-time code issued on the agent computer.
-  const code = await cli(['login-code', '--email', 'remote@example.localhost']);
+  const code = await cli(['login-code']);
   await remote.getByRole('button', { name: 'Use a sign-in code instead' }).click();
   await remote.getByLabel('Sign-in code').fill(code.code);
   await remote.getByRole('button', { name: 'Sign in' }).click();
   await remote.getByRole('button', { name: 'Sign out' }).waitFor();
-  await remote.getByText('remote@example.localhost', { exact: true }).waitFor();
-  await remote.getByText(/No greetings yet/).waitFor();
-  assert.equal(await remote.getByText('Hello from the synthetic CLI').count(), 0, 'the remote account must not see another account\'s greetings');
-  ok('through the same-port forward a one-time login code signs in a separate account');
+  await remote.getByText('Hello from the synthetic CLI', { exact: true }).waitFor();
+  ok('through the same-port forward a one-time login code signs in the project account');
 
   await until(async () => remoteSockets.some(url => new URL(url).pathname === '/__ui_hmr'), 'hot reload over the forward');
   assert(remoteSockets.every(url => new URL(url).origin === `ws://127.0.0.1:${port}`), 'the HMR WebSocket stays same-origin over the forward');

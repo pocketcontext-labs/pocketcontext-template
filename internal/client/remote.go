@@ -23,7 +23,7 @@ import (
 // computer) and this computer reaches it through a port forward on the same
 // loopback port. It never resolves or creates a database, never starts a
 // server and never reads the local key; it signs in with a one-time code issued
-// on the agent computer (or email and password) and keeps only the resulting
+// on the agent computer (or the password) and keeps only the resulting
 // token in a private session file.
 
 // refreshAfter is how old a stored token may be before it is refreshed. Tokens
@@ -34,7 +34,6 @@ const refreshAfter = 24 * time.Hour
 type session struct {
 	URL       string    `json:"url"`
 	Instance  string    `json:"instance"`
-	Email     string    `json:"email"`
 	Token     string    `json:"token"`
 	Refreshed time.Time `json:"refreshed"`
 }
@@ -154,7 +153,7 @@ func checkRemote(base string, s *session) (*bundle.Instance, error) {
 
 // signInHint says how to sign in to base.
 func signInHint(base string) string {
-	return fmt.Sprintf("get a one-time code on the agent computer (`templatecontext login-code --email EMAIL` there), then run `templatecontext login --url %s --code-stdin` and write the code to standard input; or sign in with `templatecontext login --url %s --email EMAIL`", base, base)
+	return fmt.Sprintf("get a one-time code on the agent computer (`templatecontext login-code` there), then run `templatecontext login --url %s --code-stdin` and write the code to standard input; or sign in with the password: `templatecontext login --url %s`", base, base)
 }
 
 func expired(base string) error {
@@ -193,12 +192,8 @@ func NewRemote(base string) (*Client, error) {
 	return c, nil
 }
 
-// login signs in with email and password and stores only the token.
-func login(base, email string, passwordStdin bool) (map[string]any, error) {
-	if !emailPattern.MatchString(email) {
-		return nil, fail(2, "usage: templatecontext login --url URL (--code-stdin | --email EMAIL [--password-stdin])")
-	}
-	email = strings.ToLower(email)
+// login signs in with the password and stores only the token.
+func login(base string, passwordStdin bool) (map[string]any, error) {
 	i, err := checkRemote(base, nil)
 	if err != nil {
 		return nil, err
@@ -208,7 +203,7 @@ func login(base, email string, passwordStdin bool) (map[string]any, error) {
 		return nil, err
 	}
 	c := newClient(base)
-	status, data, err := c.send("POST", "/api/collections/users/auth-with-password", map[string]string{"identity": email, "password": password}, nil, "", nil)
+	status, data, err := c.send("POST", "/api/collections/users/auth-with-password", map[string]string{"identity": bundle.AccountEmail, "password": password}, nil, "", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -216,10 +211,10 @@ func login(base, email string, passwordStdin bool) (map[string]any, error) {
 	if status != 200 || token == "" {
 		return nil, fail(1, "sign-in to %s failed (HTTP %d): %s", base, status, message(data))
 	}
-	if err := saveSession(&session{URL: base, Instance: i.Instance, Email: email, Token: token, Refreshed: time.Now().UTC()}); err != nil {
+	if err := saveSession(&session{URL: base, Instance: i.Instance, Token: token, Refreshed: time.Now().UTC()}); err != nil {
 		return nil, err
 	}
-	return map[string]any{"url": base, "email": email, "instance": i.Instance}, nil
+	return map[string]any{"url": base, "instance": i.Instance}, nil
 }
 
 // readCode reads a one-time sign-in code from the first line of standard input.
@@ -252,15 +247,13 @@ func loginWithCode(base string) (map[string]any, error) {
 		return nil, err
 	}
 	token, _ := dig(data, "token").(string)
-	email, _ := dig(data, "record", "email").(string)
-	if status != 200 || token == "" || email == "" {
-		return nil, fail(1, "sign-in to %s failed (HTTP %d): %s Ask for a new code: `templatecontext login-code --email EMAIL` on the agent computer.", base, status, message(data))
+	if status != 200 || token == "" {
+		return nil, fail(1, "sign-in to %s failed (HTTP %d): %s Ask for a new code: `templatecontext login-code` on the agent computer.", base, status, message(data))
 	}
-	email = strings.ToLower(email)
-	if err := saveSession(&session{URL: base, Instance: i.Instance, Email: email, Token: token, Refreshed: time.Now().UTC()}); err != nil {
+	if err := saveSession(&session{URL: base, Instance: i.Instance, Token: token, Refreshed: time.Now().UTC()}); err != nil {
 		return nil, err
 	}
-	return map[string]any{"url": base, "email": email, "instance": i.Instance}, nil
+	return map[string]any{"url": base, "instance": i.Instance}, nil
 }
 
 // remoteStatus reports reachability and sign-in without failing when unreachable.
@@ -269,10 +262,7 @@ func remoteStatus(base string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := map[string]any{"url": base, "reachable": false, "instance": "", "email": "", "loggedIn": false}
-	if s != nil {
-		out["email"] = s.Email
-	}
+	out := map[string]any{"url": base, "reachable": false, "instance": "", "loggedIn": false}
 	i, probeErr := probe(base)
 	if probeErr == nil {
 		out["reachable"], out["instance"] = true, i.Instance

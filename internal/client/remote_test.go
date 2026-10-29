@@ -58,7 +58,7 @@ func TestSessionFile(t *testing.T) {
 	if s, err := loadSession(base); s != nil || err != nil {
 		t.Fatalf("loadSession without a file = %v, %v", s, err)
 	}
-	want := &session{URL: base, Instance: "abc", Email: "a@b.c", Token: "t", Refreshed: time.Now().UTC().Truncate(time.Second)}
+	want := &session{URL: base, Instance: "abc", Token: "t", Refreshed: time.Now().UTC().Truncate(time.Second)}
 	if err := saveSession(want); err != nil {
 		t.Fatal(err)
 	}
@@ -118,6 +118,9 @@ func TestCodeLoginUsage(t *testing.T) {
 		{"login", "--url", "http://127.0.0.1:1", "--code-stdin", "--password-stdin"},
 		{"login-code", "--url", "http://127.0.0.1:1", "--email", "a@example.localhost"},
 		{"open", "--url", "http://127.0.0.1:1", "--email", "a@example.localhost"},
+		{"login", "--url", "http://127.0.0.1:1", "--email", "a@example.localhost"},
+		{"account", "--email", "a@example.localhost"},
+		{"init", "--email", "a@example.localhost"},
 	} {
 		err := run(argv)
 		f, ok := err.(*Fail)

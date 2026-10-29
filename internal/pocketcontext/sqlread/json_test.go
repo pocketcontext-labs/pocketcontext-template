@@ -96,33 +96,6 @@ func TestJSONTraversalLimits(t *testing.T) {
 	}
 }
 
-func TestJSONSnapshotVisibility(t *testing.T) {
-	db, path, c, sc := snapshotFixture(t)
-	s := newTestSnapshot(t, path, c, sc)
-	for _, tc := range []struct {
-		user string
-		want [][]any
-	}{{"alice", [][]any{{int64(100)}, {int64(200)}}}, {"bob", [][]any{{int64(900)}}}, {"stranger", [][]any{}}} {
-		r, _, err := s.Query(context.Background(), tc.user, `SELECT j.value FROM pay,json_each(json_array(salary)) j ORDER BY j.value`)
-		if err != nil || !reflect.DeepEqual(r.Rows, tc.want) {
-			t.Fatalf("%s: %#v %v", tc.user, r, err)
-		}
-	}
-	for _, q := range []string{`SELECT value FROM pay,json_each(json_array(secret))`, `SELECT value FROM json_each((SELECT json_group_array(requester) FROM managers))`} {
-		if _, _, err := s.Query(context.Background(), "alice", q); err == nil {
-			t.Fatalf("allowed %s", q)
-		}
-	}
-	if _, err := db.Exec(`DELETE FROM managers WHERE requester='alice'`); err != nil {
-		t.Fatal(err)
-	}
-	r, _, err := s.Query(context.Background(), "alice", `SELECT j.value FROM pay,json_tree(json_array(salary)) j`)
-	if err != nil || len(r.Rows) != 0 {
-		t.Fatalf("revocation: %#v %v", r, err)
-	}
-	cleanSnapshot(t, s)
-}
-
 func TestJSONSchemaChangeDuringQuery(t *testing.T) {
 	e, db := fixture(t, Config{})
 	e.db.SetMaxOpenConns(1)

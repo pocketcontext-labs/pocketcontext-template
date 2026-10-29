@@ -33,17 +33,12 @@ test("launcher requires an explicit database and valid port", () => {
   );
 });
 
-test("launcher parses --tunnel as a flag and --email only with it", () => {
+test("launcher parses --tunnel as a flag and has no account option", () => {
   assert.equal(parseOptions(["--db", "example.db"]).tunnel, false);
-  const options = parseOptions(["--tunnel", "--db", "example.db", "--email", "You@Example.localhost"]);
-  assert.equal(options.tunnel, true);
-  assert.equal(options.email, "you@example.localhost");
-  assert.equal(parseOptions(["--db", "example.db", "--tunnel"]).tunnel, true);
+  assert.equal(parseOptions(["--tunnel", "--db", "example.db"]).tunnel, true);
   assert.throws(() => parseOptions(["--db", "example.db", "--tunnel", "--tunnel"]), /Usage/);
   assert.throws(() => parseOptions(["--db", "example.db", "--tunnel", "yes"]), /Usage/);
-  assert.throws(() => parseOptions(["--db", "example.db", "--email", "you@example.localhost"]), /--tunnel/);
-  assert.throws(() => parseOptions(["--db", "example.db", "--tunnel", "--email", "nobody"]), /--email/);
-  assert.throws(() => parseOptions(["--db", "example.db", "--tunnel", "--email"]), /Usage/);
+  assert.throws(() => parseOptions(["--db", "example.db", "--tunnel", "--email", "you@example.localhost"]), /Usage/);
 });
 
 test("launcher reads only explicit project settings and refuses missing databases", async () => {
@@ -57,18 +52,13 @@ test("launcher reads only explicit project settings and refuses missing database
     await writeFile(db, "synthetic");
     assert.equal((await projectOptions(parseOptions(["--db", folder]))).db, db);
     assert.equal((await projectOptions(parseOptions(["--db", db]))).port, 8098);
-    await assert.rejects(projectOptions(parseOptions(["--db", db, "--tunnel"])), /--email/);
     await writeFile(
       join(folder, "templatecontext.json"),
-      JSON.stringify({ port: 18123, email: "dev@example.localhost" }),
+      JSON.stringify({ port: 18123 }),
     );
     const options = await projectOptions(parseOptions(["--db", db, "--tunnel"]));
     assert.equal(options.port, 18123);
-    assert.equal(options.email, "dev@example.localhost");
-    assert.equal(
-      (await projectOptions(parseOptions(["--db", db, "--tunnel", "--email", "you@example.localhost"]))).email,
-      "you@example.localhost",
-    );
+    assert.equal(options.tunnel, true);
     await assert.rejects(
       projectOptions(parseOptions(["--db", db, "--vite-port", "18123"])),
       /different ports/,
@@ -102,7 +92,7 @@ test("launcher refuses an occupied port without touching its listener", async ()
 });
 
 test("tunnel instructions name the same port, the stdin forward and the code", () => {
-  const text = tunnelInstructions({ address, port: 18123, code: "c0de0123456789", expires: "2026-10-25T10:10:00Z", email: "you@example.localhost" });
+  const text = tunnelInstructions({ address, port: 18123, code: "c0de0123456789", expires: "2026-10-25T10:10:00Z" });
   assert.match(text, new RegExp(`Tunnel address: ${address}`));
   assert(text.includes(`printf '%s\\n' "$ADDRESS" | templatecontext tunnel forward --address-stdin --url http://127.0.0.1:18123`));
   assert.equal(text.split(address).length, 2, "the address appears exactly once");
@@ -110,7 +100,7 @@ test("tunnel instructions name the same port, the stdin forward and the code", (
   assert.match(text, /Host 127\.0\.0\.1:18123/);
   assert.match(text, /ws:\/\/127\.0\.0\.1:18123/);
   assert.match(text, /read -r ADDRESS/);
-  assert.match(text, /Sign-in code for you@example\.localhost \(single use, expires 2026-10-25T10:10:00Z\)/);
+  assert.match(text, /Sign-in code \(single use, expires 2026-10-25T10:10:00Z\)/);
   assert.match(text, /^ {2}c0de0123456789$/m);
   assert(text.includes("http://127.0.0.1:18123/bundle/login#c0de0123456789"));
   assert.doesNotMatch(tunnelInstructions({ address, port: 18123 }), /Sign-in code/);
@@ -134,11 +124,11 @@ test("the first address line wins; other output is ignored", async () => {
 });
 
 /** A project folder and fake child processes; nothing real is started. */
-async function harness({ tunnelLines = [JSON.stringify({ address, port: 18123, serverRunning: true })], loginCode = { code: "c0de0123456789", email: "dev@example.localhost", expires: "2026-10-25T10:10:00Z" }, tunnelExits = false } = {}) {
+async function harness({ tunnelLines = [JSON.stringify({ address, port: 18123, serverRunning: true })], loginCode = { code: "c0de0123456789", expires: "2026-10-25T10:10:00Z" }, tunnelExits = false } = {}) {
   const folder = await mkdtemp(join(tmpdir(), "templatecontext-launcher-run-"));
   const db = join(folder, "templatecontext.db");
   await writeFile(db, "synthetic");
-  await writeFile(join(folder, "templatecontext.json"), JSON.stringify({ port: 18123, email: "dev@example.localhost", instance: "instance-1" }));
+  await writeFile(join(folder, "templatecontext.json"), JSON.stringify({ port: 18123, instance: "instance-1" }));
   const events = [];
   const children = [];
   let pid = 1000;
@@ -226,7 +216,7 @@ test("--tunnel runs tunnel serve, prints the address once with a code, and Ctrl-
     assert.deepEqual(tunnel.argv, ["tunnel", "serve", "--db", h.db]);
     assert.deepEqual(tunnel.options.stdio, ["ignore", "pipe", "inherit"], "the address is read from stdout, never logged by the launcher elsewhere");
     const issued = h.children.find((child) => child.argv[0] === "login-code");
-    assert.deepEqual(issued.argv, ["login-code", "--db", h.db, "--email", "dev@example.localhost"]);
+    assert.deepEqual(issued.argv, ["login-code", "--db", h.db]);
     const vite = h.children.find((child) => child.argv[0] === "vite");
     assert.equal(vite.options.env.TEMPLATECONTEXT_DEV_PORT, "18123");
     const text = h.text();

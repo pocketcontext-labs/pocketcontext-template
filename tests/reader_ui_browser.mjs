@@ -70,8 +70,7 @@ try {
   const origin = `http://127.0.0.1:${port}`;
   const password = 'synthetic reader password';
   // init starts the server in the background with the embedded reader.
-  await cli(['init', '--email', 'reader@example.localhost', '--name', 'Reader Test', '--port', String(port), '--password-stdin'], `${password}\n`);
-  await cli(['account', '--email', 'other@example.localhost', '--name', 'Other Reader']);
+  await cli(['init', '--port', String(port), '--password-stdin'], `${password}\n`);
   await cli(['add', 'A greeting from the CLI']);
 
   const served = await fetch(origin);
@@ -91,7 +90,7 @@ try {
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.goto(origin);
   await page.getByRole('heading', { name: 'Sign in' }).waitFor();
-  await page.getByLabel('Email').fill('reader@example.localhost');
+  assert.equal(await page.getByLabel('Email').count(), 0, 'the single account signs in with its password alone');
   await page.getByLabel('Password').fill('not the password');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByRole('alert').waitFor();
@@ -105,9 +104,8 @@ try {
   await page.getByRole('button', { name: 'Sign out' }).waitFor();
   assert.equal(new URL(page.url()).pathname, '/');
   assert.equal(new URL(page.url()).hash, '', 'the code never stays in the address bar');
-  await page.getByText('reader@example.localhost', { exact: true }).waitFor();
   await page.getByText('A greeting from the CLI', { exact: true }).waitFor();
-  ok('the single-use open link signs in and shows the account\'s greetings');
+  ok('the single-use open link signs in and shows the greetings');
   const reused = await (await browser.newContext()).newPage();
   await reused.goto(link.signInLink);
   await reused.getByText(/used or expired/).waitFor();
@@ -143,7 +141,7 @@ try {
   await page.getByRole('button', { name: 'Search' }).click();
   await page.getByText(/No greetings match/).waitFor();
   await page.getByRole('button', { name: 'Clear' }).click();
-  ok('full-text search finds own greetings and reports no matches');
+  ok('full-text search finds greetings and reports no matches');
   await page.screenshot({ path: path.join(screenshots, 'reader-light.png'), fullPage: true });
 
   const lightBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
@@ -165,18 +163,16 @@ try {
   await page.getByRole('heading', { name: 'Sign in' }).waitFor();
   ok('sign out clears the stored session and survives a reload');
 
-  const code = await cli(['login-code', '--email', 'other@example.localhost']);
+  const code = await cli(['login-code']);
   await page.getByRole('button', { name: 'Use a sign-in code instead' }).click();
   await page.getByLabel('Sign-in code').fill(code.code);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.getByText('other@example.localhost', { exact: true }).waitFor();
-  await page.getByText(/No greetings yet/).waitFor();
+  await page.getByText('Third greeting about telescopes', { exact: true }).waitFor();
   await page.getByRole('searchbox', { name: 'Search greetings' }).fill('synthetic');
   await page.getByRole('button', { name: 'Search' }).click();
-  await page.getByText(/No greetings match/).waitFor();
-  ok('a login code signs in another account, which sees and finds none of the first account\'s greetings');
+  await page.getByText(/2 matches for/).waitFor();
+  ok('a login code signs in the same account, which sees and finds the same greetings');
   await page.getByRole('button', { name: 'Sign out' }).click();
-  await page.getByLabel('Email').fill('reader@example.localhost');
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByText('Third greeting about telescopes', { exact: true }).waitFor();

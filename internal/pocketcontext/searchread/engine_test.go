@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -280,5 +281,352 @@ func TestSchemaValidationBusyClassification(t *testing.T) {
 	}
 	if _, err = e.Search(context.Background(), "docs", "alpha", 0); err != nil {
 		t.Fatalf("after writer released: %v", err)
+	}
+}
+
+// Built indexes: synthetic revisions and publication manifests. Manifest
+// values are revision IDs; r3 is archived.
+func builtFixture(t *testing.T, mutate func(*Config)) (*Engine, *sql.DB) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "built.db")
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	db.SetMaxOpenConns(1)
+	_, err = db.Exec(`PRAGMA journal_mode=WAL;
+CREATE TABLE revisions(id TEXT PRIMARY KEY, page TEXT, title TEXT, body TEXT, archived INTEGER, rank_hint INTEGER, secret TEXT);
+CREATE TABLE publications(id TEXT PRIMARY KEY, manifest TEXT);
+INSERT INTO revisions VALUES
+ ('r1','guide','Rocket guide','synthetic rocket launch checklist',0,1,'rocket secret'),
+ ('r2','garden','Garden notes','rocket rocket rocket in the garden',0,2,NULL),
+ ('r3','draft','Archived draft','archived rocket draft',1,3,NULL),
+ ('r4','null','Null body',NULL,0,4,NULL),
+ ('old1','guide','Rocket guide v0','older rocket text',0,5,NULL);
+INSERT INTO publications VALUES
+ ('p1','{"guide":"r1","garden":"r2","null":"r4"}'),
+ ('p2','{"guide":"r1","draft":"r3"}'),
+ ('p3','{"guide":"old1"}');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := &Scope{Collection: "publications", Field: "manifest"}
+	cfg := Config{
+		Indexes: map[string]Index{
+			"pages":   {Collection: "revisions", Columns: []string{"title", "body"}, SnippetColumn: "body", Weights: []float64{8, 1}, Scope: manifest, Members: MembersVisible, Where: "archived = 0"},
+			"all":     {Collection: "revisions", Columns: []string{"title", "body"}, SnippetColumn: "body", Scope: manifest},
+			"current": {Collection: "revisions", Columns: []string{"title", "body"}, SnippetColumn: "body", Weights: []float64{5, 1}, Where: "archived = 0 AND id <> 'old1'"},
+		},
+		Readable: map[string][]string{"revisions": {"id", "page", "title", "body", "archived", "rank_hint"}},
+	}
+	if mutate != nil {
+		mutate(&cfg)
+	}
+	e, err := New(path, cfg, Limits{Timeout: time.Second, MaxRows: 100, MaxBytes: 1 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { e.Close() })
+	return e, db
+}
+
+func hitIDs(r Result) string {
+	out := []string{}
+	for _, h := range r.Hits {
+		out = append(out, h.ID)
+	}
+	return strings.Join(out, ",")
+}
+
+func TestBuiltVisibleRevisionScope(t *testing.T) {
+	e, db := builtFixture(t, nil)
+	ctx := context.Background()
+	r, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p1"})
+	if err != nil || hitIDs(r) != "r1,r2" || r.Scope != "p1" || len(r.Generation) != 64 || !strings.Contains(r.Hits[0].Excerpt, "rocket") {
+		t.Fatalf("published revisions: %+v %v", r, err)
+	}
+	// Membership comes from manifest values (revision IDs), not keys (pages).
+	if r, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p3"}); err != nil || hitIDs(r) != "old1" {
+		t.Fatalf("manifest values: %+v %v", r, err)
+	}
+	// visible drops archived members; all refuses partial results instead.
+	if r, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p2"}); err != nil || hitIDs(r) != "r1" {
+		t.Fatalf("archived excluded: %+v %v", r, err)
+	}
+	if r, err := e.SearchRequest(ctx, Request{Index: "all", Query: "rocket", Scope: "p2"}); err != nil || hitIDs(r) != "r1,r3" && hitIDs(r) != "r3,r1" {
+		t.Fatalf("members all without where: %+v %v", r, err)
+	}
+	if _, err := db.Exec(`UPDATE publications SET manifest='{"guide":"r1","gone":"missing"}' WHERE id='p2'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.SearchRequest(ctx, Request{Index: "all", Query: "rocket", Scope: "p2"}); !errors.Is(err, ErrIndexInvalid) {
+		t.Fatalf("members all with a missing member: %v", err)
+	}
+	if r, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p2"}); err != nil || hitIDs(r) != "r1" {
+		t.Fatalf("members visible with a missing member: %+v %v", r, err)
+	}
+	if _, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "missing"}); !errors.Is(err, ErrScopeNotFound) {
+		t.Fatalf("missing scope: %v", err)
+	}
+	// Columns outside the index are never searchable.
+	if r, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "secret", Scope: "p1"}); err != nil || len(r.Hits) != 0 {
+		t.Fatalf("unindexed column searched: %+v %v", r, err)
+	}
+	for _, req := range []Request{
+		{Index: "pages", Query: "rocket"},
+		{Index: "current", Query: "rocket", Scope: "p1"},
+		{Index: "pages", Query: "rocket", Scope: "p1", Offset: 1},
+		{Index: "pages", Query: "rocket", Scope: "p1", Offset: MaxOffset + 1, ExpectedGeneration: "x"},
+		{Index: "pages", Query: "", Scope: "p1"},
+		{Index: "pages", Query: "rocket", Scope: "p1", Limit: 101},
+		{Index: "missing", Query: "rocket"},
+	} {
+		if _, err := e.SearchRequest(ctx, req); !errors.Is(err, ErrInvalidQuery) {
+			t.Fatalf("%+v: %v", req, err)
+		}
+	}
+}
+
+func TestBuiltWhereAndInvalidContent(t *testing.T) {
+	e, db := builtFixture(t, nil)
+	ctx := context.Background()
+	if r, err := e.SearchRequest(ctx, Request{Index: "current", Query: "rocket"}); err != nil || hitIDs(r) != "r1,r2" || r.Scope != "" || len(r.Generation) != 64 {
+		t.Fatalf("where: %+v %v", r, err)
+	}
+	for _, manifest := range []string{`[]`, `{"a":"r1","a":"r2"}`, `{"a":1}`, `not json`} {
+		if _, err := db.Exec("UPDATE publications SET manifest=? WHERE id='p1'", manifest); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p1"}); !errors.Is(err, ErrIndexInvalid) {
+			t.Fatalf("%s: %v", manifest, err)
+		}
+	}
+	if _, err := db.Exec("UPDATE publications SET manifest=NULL WHERE id='p1'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p1"}); !errors.Is(err, ErrIndexInvalid) {
+		t.Fatalf("null membership: %v", err)
+	}
+	if _, err := db.Exec("UPDATE publications SET manifest='{}' WHERE id='p1'; UPDATE revisions SET body=x'00ff' WHERE id='r1'"); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p1"}); err != nil || len(r.Hits) != 0 {
+		t.Fatalf("empty scope: %+v %v", r, err)
+	}
+	if _, err := e.SearchRequest(ctx, Request{Index: "current", Query: "rocket"}); !errors.Is(err, ErrIndexInvalid) {
+		t.Fatalf("blob value: %v", err)
+	}
+	numeric, _ := builtFixture(t, func(c *Config) {
+		c.Indexes = map[string]Index{"hints": {Collection: "revisions", Columns: []string{"rank_hint"}, SnippetColumn: "rank_hint"}}
+	})
+	if _, err := numeric.SearchRequest(ctx, Request{Index: "hints", Query: "1"}); !errors.Is(err, ErrIndexInvalid) {
+		t.Fatalf("integer value: %v", err)
+	}
+}
+
+func TestBuiltPaginationAndGeneration(t *testing.T) {
+	e, db := builtFixture(t, nil)
+	ctx := context.Background()
+	first, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p1", Limit: 1})
+	if err != nil || len(first.Hits) != 1 || !first.HasMore || !first.Truncated {
+		t.Fatalf("first: %+v %v", first, err)
+	}
+	second, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p1", Limit: 1, Offset: 1, ExpectedGeneration: first.Generation})
+	if err != nil || len(second.Hits) != 1 || second.Hits[0].ID == first.Hits[0].ID || second.Generation != first.Generation || second.HasMore {
+		t.Fatalf("second: %+v %v", second, err)
+	}
+	// Changes outside the scope and to archived rows keep the generation.
+	if _, err := db.Exec("UPDATE revisions SET body='changed rocket' WHERE id IN ('r3','old1')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p1", Limit: 1, Offset: 1, ExpectedGeneration: first.Generation}); err != nil {
+		t.Fatalf("unrelated change: %v", err)
+	}
+	if _, err := db.Exec("UPDATE revisions SET body='changed rocket' WHERE id='r2'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p1", Limit: 1, Offset: 1, ExpectedGeneration: first.Generation}); !errors.Is(err, ErrGenerationConflict) {
+		t.Fatalf("indexed change: %v", err)
+	}
+	// Archiving a member removes it on the next request despite the cache.
+	if _, err := db.Exec("UPDATE revisions SET archived=1 WHERE id='r2'"); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p1"}); err != nil || hitIDs(r) != "r1" {
+		t.Fatalf("archived member: %+v %v", r, err)
+	}
+	// The generation binds ranking configuration as well as content.
+	reweighted, _ := builtFixture(t, func(c *Config) {
+		idx := c.Indexes["pages"]
+		idx.Weights = []float64{1, 8}
+		c.Indexes["pages"] = idx
+	})
+	other, err := reweighted.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "p1", Limit: 1})
+	if err != nil || other.Generation == first.Generation {
+		t.Fatalf("generation ignores weights: %+v %v", other, err)
+	}
+}
+
+func TestBuiltIndexByteLimitAndCache(t *testing.T) {
+	e, db := builtFixture(t, func(c *Config) { c.MaxIndexBytes, c.CacheBytes = 1024, 100<<10 })
+	ctx := context.Background()
+	if _, err := e.SearchRequest(ctx, Request{Index: "current", Query: "rocket"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE revisions SET body=? WHERE id='r2'", strings.Repeat("rocket ", 400)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.SearchRequest(ctx, Request{Index: "current", Query: "rocket"}); !errors.Is(err, ErrIndexLimit) {
+		t.Fatalf("index limit: %v", err)
+	}
+	if _, err := e.SearchRequest(ctx, Request{Index: "pages", Scope: "p3", Query: "rocket"}); err != nil {
+		t.Fatalf("other index unaffected: %v", err)
+	}
+	for i := 0; i < 12; i++ {
+		id := fmt.Sprintf("n%02d", i)
+		if _, err := db.Exec("INSERT INTO revisions VALUES(?, 'p', 'note', ?, 0, 0, NULL); INSERT INTO publications VALUES(?, ?)", id, "distinct rocket "+id, "scope"+id, `{"a":"`+id+`"}`); err != nil {
+			t.Fatal(err)
+		}
+		r, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "scope" + id})
+		if err != nil || hitIDs(r) != id {
+			t.Fatalf("%s: %+v %v", id, r, err)
+		}
+		if entries, bytes := e.cache.stats(); entries < 1 || bytes > 100<<10 || entries > MaxCacheEntries {
+			t.Fatalf("cache bounds: %d entries %d bytes", entries, bytes)
+		}
+	}
+	// A failed pinned connection yields an error, never empty results, and is
+	// replaced on the next request.
+	r, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "scopen00"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := e.cache.acquire(r.Generation)
+	if entry == nil {
+		t.Fatal("entry not cached")
+	}
+	entry.conn.Close()
+	e.cache.release(entry)
+	if r, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "scopen00"}); err == nil {
+		t.Fatalf("lost connection returned results: %+v", r)
+	}
+	if r, err := e.SearchRequest(ctx, Request{Index: "pages", Query: "rocket", Scope: "scopen00"}); err != nil || hitIDs(r) != "n00" {
+		t.Fatalf("rebuild: %+v %v", r, err)
+	}
+	e.Close()
+	if entries, bytes := e.cache.stats(); entries != 0 || bytes != 0 {
+		t.Fatalf("close: %d %d", entries, bytes)
+	}
+}
+
+func TestBuiltAdmissionAndCachedQueryCancellation(t *testing.T) {
+	e, _ := builtFixture(t, nil)
+	for i := 0; i < concurrentBuiltRequests; i++ {
+		e.requests <- struct{}{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	_, err := e.SearchRequest(ctx, Request{Index: "current", Query: "rocket"})
+	cancel()
+	for i := 0; i < concurrentBuiltRequests; i++ {
+		<-e.requests
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("admission wait: %v", err)
+	}
+	if entries, _ := e.cache.stats(); entries != 0 {
+		t.Fatal("queued request built an index")
+	}
+	r, err := e.SearchRequest(context.Background(), Request{Index: "current", Query: "rocket"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := e.cache.acquire(r.Generation)
+	defer e.cache.release(entry)
+	entry.queries <- struct{}{}
+	defer func() { <-entry.queries }()
+	ctx, cancel = context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := e.SearchRequest(ctx, Request{Index: "current", Query: "rocket"}); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("cached query wait: %v", err)
+	}
+}
+
+func TestBuiltConcurrentSearches(t *testing.T) {
+	e, _ := builtFixture(t, nil)
+	errs := make(chan error, 32)
+	for i := 0; i < 32; i++ {
+		go func(i int) {
+			req, want := Request{Index: "current", Query: "rocket"}, "r1,r2"
+			if i%2 == 1 {
+				req, want = Request{Index: "pages", Scope: "p1", Query: "rocket"}, "r1,r2"
+			}
+			r, err := e.SearchRequest(context.Background(), req)
+			if err == nil && hitIDs(r) != want {
+				err = fmt.Errorf("%s: %s", req.Index, hitIDs(r))
+			}
+			errs <- err
+		}(i)
+	}
+	for i := 0; i < 32; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestBuiltConfigRejected(t *testing.T) {
+	base := Index{Collection: "revisions", Columns: []string{"title"}, SnippetColumn: "title"}
+	manifest := &Scope{Collection: "publications", Field: "manifest"}
+	for name, mutate := range map[string]func(*Index, *Config){
+		"generation": func(i *Index, _ *Config) {
+			i.Generation = &Generation{Collection: "publications", Record: "p1", Field: "manifest"}
+		},
+		"members without scope":   func(i *Index, _ *Config) { i.Members = MembersAll },
+		"bad members":             func(i *Index, _ *Config) { i.Scope, i.Members = manifest, "some" },
+		"blank where":             func(i *Index, _ *Config) { i.Where = " " },
+		"statement in where":      func(i *Index, _ *Config) { i.Where = "1); DELETE FROM revisions; --" },
+		"escaping where":          func(i *Index, _ *Config) { i.Where = "archived = 0) OR (1 = 1" },
+		"comment in where":        func(i *Index, _ *Config) { i.Where = "archived = 0 /* x */" },
+		"where binds":             func(i *Index, _ *Config) { i.Where = "title = :other" },
+		"where positional":        func(i *Index, _ *Config) { i.Where = "title = ?" },
+		"where unreadable column": func(i *Index, _ *Config) { i.Where = "secret IS NULL" },
+		"where unknown column":    func(i *Index, _ *Config) { i.Where = "missing = 0" },
+		"where quoted identifier": func(i *Index, _ *Config) { i.Where = `"missing" = 'missing'` },
+		"where other table":       func(i *Index, _ *Config) { i.Where = "EXISTS (SELECT 1 FROM publications)" },
+		"where schema":            func(i *Index, _ *Config) { i.Where = "EXISTS (SELECT 1 FROM sqlite_schema)" },
+		"where function":          func(i *Index, _ *Config) { i.Where = "random() > 0" },
+		"unknown column":          func(i *Index, _ *Config) { i.Columns, i.SnippetColumn = []string{"missing"}, "missing" },
+		"unknown scope":           func(i *Index, _ *Config) { i.Scope = &Scope{Collection: "publications", Field: "missing"} },
+		"reserved column":         func(i *Index, _ *Config) { i.Columns, i.SnippetColumn = []string{"rank"}, "rank" },
+		"internal table column":   func(i *Index, _ *Config) { i.Columns, i.SnippetColumn = []string{builtTable}, builtTable },
+		"snippet":                 func(i *Index, _ *Config) { i.SnippetColumn = "body" },
+		"weights":                 func(i *Index, _ *Config) { i.Weights = []float64{1, 2} },
+		"persisted with where":    func(i *Index, _ *Config) { i.Table, i.Where = "revisions_search", "archived = 0" },
+		"persisted with members":  func(i *Index, _ *Config) { i.Table, i.Members = "revisions_search", MembersVisible },
+		"small maxIndexBytes":     func(_ *Index, c *Config) { c.MaxIndexBytes = 10 },
+		"large maxIndexBytes":     func(_ *Index, c *Config) { c.MaxIndexBytes = MaxMaxIndexBytes + 1 },
+		"cache below index size":  func(_ *Index, c *Config) { c.MaxIndexBytes, c.CacheBytes = 4096, 2048 },
+		"large cache":             func(_ *Index, c *Config) { c.CacheBytes = MaxCacheBytes + 1 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, db := builtFixture(t, nil)
+			var path string
+			if err := db.QueryRow("SELECT file FROM pragma_database_list WHERE name='main'").Scan(&path); err != nil {
+				t.Fatal(err)
+			}
+			idx := base
+			cfg := Config{Readable: map[string][]string{"revisions": {"id", "title", "body", "archived"}}}
+			mutate(&idx, &cfg)
+			cfg.Indexes = map[string]Index{"docs": idx}
+			if e, err := New(path, cfg, Limits{}); err == nil {
+				e.Close()
+				t.Fatal("accepted")
+			}
+		})
+	}
+	// Persisted-only configurations keep rejecting built-index limits.
+	if err := NormalizeConfig(&Config{Indexes: map[string]Index{"docs": {Table: "docs_search", Collection: "docs", Columns: []string{"title"}, SnippetColumn: "title"}}, MaxIndexBytes: 4096}); err == nil {
+		t.Fatal("persisted index accepted built limits")
 	}
 }

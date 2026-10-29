@@ -6,18 +6,16 @@ import (
 	"unicode/utf8"
 )
 
-// The hello-world data model: greetings owned by the signed-in account. Writes
-// go through the records API, where the server sets the owner; reads use the
-// authenticated SQL reader and the private full-text index, which only ever
-// see the requester's own greetings.
+// The hello-world data model: the project's greetings. Writes go through the
+// records API; reads use the authenticated SQL reader and full-text search.
 
 // MaxMessage is the longest greeting message, in characters.
 const MaxMessage = 500
 
 // greetingColumns are the SQL-readable greeting fields, in output order.
-const greetingColumns = "id, message, owner, created, updated"
+const greetingColumns = "id, message, created, updated"
 
-// AddGreeting creates one greeting for the signed-in account.
+// AddGreeting creates one greeting.
 func (c *Client) AddGreeting(message string) (map[string]any, error) {
 	message = strings.TrimSpace(message)
 	if message == "" || !utf8.ValidString(message) || utf8.RuneCountInString(message) > MaxMessage {
@@ -38,7 +36,7 @@ func (c *Client) AddGreeting(message string) (map[string]any, error) {
 	return out, nil
 }
 
-// ListGreetings returns the newest greetings of the signed-in account.
+// ListGreetings returns the newest greetings.
 func (c *Client) ListGreetings(limit int) ([]map[string]any, error) {
 	if limit < 1 || limit > 500 {
 		return nil, fail(2, "--limit must be 1-500")
@@ -46,7 +44,7 @@ func (c *Client) ListGreetings(limit int) ([]map[string]any, error) {
 	return c.Rows(fmt.Sprintf("SELECT %s FROM greetings ORDER BY created DESC, id DESC LIMIT %d", greetingColumns, limit))
 }
 
-// Search ranks the signed-in account's greetings by full-text match of their message.
+// Search ranks the greetings by full-text match of their message.
 func (c *Client) Search(term string, o SearchOptions) (map[string]any, error) {
 	if strings.TrimSpace(term) == "" || len(term) > 4096 || len(strings.Fields(term)) > 16 {
 		return nil, fail(2, "search requires 1-16 terms and at most 4096 UTF-8 bytes")
@@ -64,7 +62,7 @@ func (c *Client) Search(term string, o SearchOptions) (map[string]any, error) {
 	data, err := c.Must("POST", "/api/context/search", body)
 	if err != nil {
 		if f, ok := err.(*Fail); ok && f.Code == 4 {
-			return nil, fail(4, "your greetings changed; discard prior result pages and restart at offset 0 without --generation")
+			return nil, fail(4, "the greetings changed; discard prior result pages and restart at offset 0 without --generation")
 		}
 		return nil, err
 	}
@@ -99,7 +97,7 @@ func (c *Client) Search(term string, o SearchOptions) (map[string]any, error) {
 		id, _ := dig(h, "id").(string)
 		row, ok := messages[id]
 		if !ok {
-			continue // deleted after the search snapshot
+			continue // deleted after the search read
 		}
 		row["score"], row["excerpt"] = dig(h, "score"), dig(h, "excerpt")
 		greetings = append(greetings, row)

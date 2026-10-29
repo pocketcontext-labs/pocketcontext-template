@@ -1,6 +1,6 @@
 # TemplateContext
 
-A template for local "*Context" applications in one binary, derived from [PocketContext](https://github.com/pocketcontext-labs/pocketcontext). It keeps PocketContext's architecture — a server on PocketBase, a browser reader, a command-line client, a private tunnel to other computers and an agent skill for Claude Code, Codex and Antigravity, all in one Go executable with nothing else needed at run time — and replaces the knowledge base with a hello-world data model: each account adds, lists and searches its own `greetings`.
+A template for local "*Context" applications in one binary, derived from [PocketContext](https://github.com/pocketcontext-labs/pocketcontext). It keeps PocketContext's architecture — a server on PocketBase, a browser reader, a command-line client, a private tunnel to other computers and an agent skill for Claude Code, Codex and Antigravity, all in one Go executable with nothing else needed at run time — and replaces the knowledge base with a hello-world data model: the project's one account adds, lists and searches `greetings`.
 
 TemplateContext is a placeholder product. Nobody is meant to use it as it is: a new product copies the repository, renames every identity item and replaces `greetings` with its own collections.
 
@@ -16,24 +16,26 @@ A derived product is a full fork. Port security fixes from PocketContext (see [o
 TemplateContext/            ← any folder; may be in iCloud Drive, OneDrive, Dropbox or Google Drive
   templatecontext[.exe]     the binary (optional here; it can live anywhere)
   templatecontext.db        the database
-  templatecontext.json      port, account email, project ID (no secrets)
+  templatecontext.json      port and project ID (no secrets)
   storage/                  PocketBase file storage (unused by greetings)
 ```
 
 The database defaults to `templatecontext.db` beside the binary; `--db PATH` or `TEMPLATECONTEXT_DB` selects another. While the server runs, a working copy lives in the per-machine cache (`os.UserCacheDir()/templatecontext/<key>/`) together with the log, the private local key and the tunnel identity; unpacked application files live in `os.UserCacheDir()/templatecontext/app/`. The server writes a consistent copy (`VACUUM INTO` plus an atomic rename) back to `templatecontext.db` a few seconds after changes and on `stop`, so sync clients only ever see complete files.
+
+A database is opened only by a release that ships every schema migration it has applied. Any other database, such as one created by a template release before the single-user schema (0.1.x, with per-account `greetings`), is refused on start before any migration runs and left unchanged; keep using the release that created it, or start a new project with `init --db NEW_PATH`.
 
 ## Quick start
 
 Build first (see [Build](#build)), then:
 
 ```sh
-bin/templatecontext init --email you@example.localhost --name "Your Name"   # asks for a reader password
-bin/templatecontext open                                                    # reader, signed in
+bin/templatecontext init                    # asks for a reader password
+bin/templatecontext open                    # reader, signed in
 bin/templatecontext add "Hello from the command line"
 bin/templatecontext list
 bin/templatecontext search "hello"
 bin/templatecontext sql "SELECT id, message, created FROM greetings ORDER BY created DESC LIMIT 20"
-bin/templatecontext skill                                                   # Claude Code, Codex, Antigravity
+bin/templatecontext skill                   # Claude Code, Codex, Antigravity
 bin/templatecontext stop
 ```
 
@@ -43,7 +45,7 @@ Without `--db`, the database is `bin/templatecontext.db`. The server listens on 
 
 ## Authentication
 
-The reader uses the local account's email and password. `open` signs the browser in with a single-use link valid for two minutes; `login-code` issues one-time codes for remote clients (see below). The CLI needs no password: it reads a random key that the server writes to the private cache at start and exchanges it, in the `X-TemplateContext-Local-Key` header, for an ordinary `users` token. Anyone who can read that key can already read the database. All APIs still require a token, CORS allows only the server's own origin, and requests for any other `Host` are refused, so web pages cannot reach the server through `127.0.0.1`. `/api/bundle/instance` answers `{"app": "templatecontext", ...}` so the CLI and the launcher can tell this server from another program on the port.
+A project is single-user: it has exactly one account, created by `init`, with no name or email to choose (`users` holds one hidden record; the server refuses a second one and any deletion, and there is no account management). The reader asks only for its password. `open` signs the browser in with a single-use link valid for two minutes; `login-code` issues one-time codes for remote clients (see below). The CLI needs no password: it reads a random key that the server writes to the private cache at start and exchanges it, in the `X-TemplateContext-Local-Key` header, for an ordinary `users` token. Anyone who can read that key can already read the database. All APIs, including SQL and search, still require a token, CORS allows only the server's own origin, and requests for any other `Host` are refused, so web pages cannot reach the server through `127.0.0.1`. `/api/bundle/instance` answers `{"app": "templatecontext", ...}` so the CLI and the launcher can tell this server from another program on the port.
 
 ## Several computers
 
@@ -55,12 +57,11 @@ If the synced `templatecontext.db` changes while this computer has unsaved chang
 
 The server can run on one always-on computer (the agent computer) while a person uses the same binary on their own computer as a client only. Sign-in uses one-time codes, so no password passes through whoever operates the agent computer.
 
-On the agent computer, create the person's own account, open the tunnel and issue a code:
+On the agent computer, open the tunnel and issue a code. Both computers then use the project's one account:
 
 ```sh
-templatecontext account --email you@example.localhost --name "Your Name"   # no password is set or asked for
-templatecontext tunnel serve                                               # foreground; prints {"address", "port", ...}
-templatecontext login-code --email you@example.localhost                   # prints {"email","code","expires"}
+templatecontext tunnel serve      # foreground; prints {"address", "port", ...}
+templatecontext login-code        # prints {"code","expires"}
 ```
 
 On the person's computer, forward the same port and sign in with the code on standard input:
@@ -72,17 +73,17 @@ templatecontext list --url http://127.0.0.1:8098
 templatecontext skill --url http://127.0.0.1:8098
 ```
 
-For the browser reader, run `templatecontext open --email you@example.localhost --no-browser` on the agent computer and open the printed `signInLink` on the person's computer, or choose "Use a sign-in code instead" in the reader.
+For the browser reader, run `templatecontext open --no-browser` on the agent computer and open the printed `signInLink` on the person's computer, or choose "Use a sign-in code instead" in the reader.
 
 The tunnel is built in: [tailcat](https://github.com/tailscale/tailcat) 0.7.0 (WireGuard over Tailscale's data plane, without a Tailscale account, control plane or administrator rights), bootstrapped through tailcat's public relays, which are best-effort and rate-limited, and direct between the computers when the network allows. `tunnel serve` admits only the project's port and proxies it to the server on `127.0.0.1`; there is no other port, no forwarding through the agent computer and no UDP. Its address embeds the server's public key, a pre-shared key and the relay, so anyone with it can reach the port (the server still requires sign-in): share it privately. The identity is kept in the private cache (`tunnel.json`), never in the project folder, so the address stays the same across restarts of `tunnel serve`, and a running `tunnel forward` reconnects on its own; `--new-address` replaces it and invalidates the old one. `tunnel forward` follows the remote-mode rules: it listens only on the loopback port of `--url` (or `TEMPLATECONTEXT_URL`, default `http://127.0.0.1:8098`), fails when that port is busy instead of choosing another, and never reads a database or local key.
 
-Codes and links are single use and kept only in the server's memory, so a server restart invalidates them. A `login-code` code is valid for 10 minutes (`--ttl 30`-`600` seconds); an `open` link for 2 minutes. `account` without `--password-stdin` never prompts: a new account gets a random password nobody knows, an existing account keeps its password.
+Codes and links are single use and kept only in the server's memory, so a server restart invalidates them. A `login-code` code is valid for 10 minutes (`--ttl 30`-`600` seconds); an `open` link for 2 minutes. `login --url URL` without `--code-stdin` signs in with the reader password instead, and `password` on the agent computer changes it (which also ends existing sessions).
 
-A different local port is refused by the server's Host check. `--url` (or `TEMPLATECONTEXT_URL`; an explicit `--db` overrides it) accepts only `http://127.0.0.1:PORT` or `http://localhost:PORT`. Remote mode never resolves or creates a database, never starts a server and never reads the local key. `login` stores only the token, in `os.UserCacheDir()/templatecontext/remote-<hash>/session.json` (private), and asks for a new sign-in when it expires (7 days) or when the URL serves a different project. `logout` deletes it. Server commands (`serve`, `start`, `ensure-running`, `stop`, `flush`, `recover`, `init`, `password`, `account`, `login-code`) run on the agent computer only.
+A different local port is refused by the server's Host check. `--url` (or `TEMPLATECONTEXT_URL`; an explicit `--db` overrides it) accepts only `http://127.0.0.1:PORT` or `http://localhost:PORT`. Remote mode never resolves or creates a database, never starts a server and never reads the local key. `login` stores only the token, in `os.UserCacheDir()/templatecontext/remote-<hash>/session.json` (private), and asks for a new sign-in when it expires (7 days) or when the URL serves a different project. `logout` deletes it. Server commands (`serve`, `start`, `ensure-running`, `stop`, `flush`, `recover`, `init`, `password`, `login-code`) run on the agent computer only.
 
 ## Data model
 
-`greetings` (`message`, `owner`, `created`, `updated`) are private to their owner: the server sets the owner, collection rules and SQL snapshot filters restrict every read to the requester, and the full-text index is private. `user_directory` mirrors each account's display name. Reads use authenticated read-only SQL (`/api/context/query`) and search (`/api/context/search`); writes use the PocketBase records API. See [docs/data-model.md](docs/data-model.md), including how to add a collection.
+`greetings` (`message`, `created`, `updated`) belong to the project: the one account reads and writes them all, and collection rules refuse every other request. Reads use authenticated read-only SQL over the live database (`/api/context/query`) and search (`/api/context/search`); writes use the PocketBase records API. See [docs/data-model.md](docs/data-model.md), including how to add a collection.
 
 ## Build
 
@@ -102,12 +103,12 @@ make windows ZIG=/path/to/zig   # cross-compile bin/windows_amd64/templatecontex
 
 ### Build tags
 
-`build-tags.txt` is the one list of Go build tags every build, test and release uses: SQLite features (first), then the `ts_omit_` tags of the tailcat release in `go.mod`, which leave out tailscale.com features the tunnel does not use (a test checks them against tailcat's own list). PocketContext enables `sqlite_math_functions` and `sqlite_percentile` (math, `median` and `percentile` functions in the SQL reader's allowlist) and `sqlite_fts5` (the private full-text search index). The template adds SQLite features a product may need without changing its build configuration:
+`build-tags.txt` is the one list of Go build tags every build, test and release uses: SQLite features (first), then the `ts_omit_` tags of the tailcat release in `go.mod`, which leave out tailscale.com features the tunnel does not use (a test checks them against tailcat's own list). PocketContext enables `sqlite_math_functions` and `sqlite_percentile` (math, `median` and `percentile` functions in the SQL reader's allowlist) and `sqlite_fts5` (the in-memory full-text search index). The template adds SQLite features a product may need without changing its build configuration:
 
 | Tag | Enables | Why |
 | --- | --- | --- |
 | `sqlite_dbstat` | `dbstat` virtual table | measure the space each table and index uses, for maintenance and size diagnostics |
-| `sqlite_stat4` | `sqlite_stat4` statistics | better query plans from `ANALYZE` on skewed columns such as `owner` |
+| `sqlite_stat4` | `sqlite_stat4` statistics | better query plans from `ANALYZE` on skewed columns, such as a status or category |
 | `sqlite_column_metadata` | column origin APIs | map result columns to their table and column in server code |
 | `sqlite_introspect` | `pragma_function_list`, `pragma_module_list`, `pragma_pragma_list` | check in tests and diagnostics which functions and modules a build has |
 | `sqlite_preupdate_hook` | the pre-update hook | observe row values before and after a change, e.g. for change logs or cache invalidation in Go |
@@ -121,7 +122,7 @@ None of them is reachable through the SQL reader: `internal/bundle/sqlite_test.g
 Build the executable once with `make ui && make build`, then use Vite hot reload while editing `ui/src`. Choose a separate development project with synthetic data. Initialize it once and stop the server that `init` starts:
 
 ```sh
-bin/templatecontext init --db /absolute/path/to/dev/templatecontext.db --port 18098 --email dev@example.localhost --name Developer
+bin/templatecontext init --db /absolute/path/to/dev/templatecontext.db --port 18098
 bin/templatecontext stop --db /absolute/path/to/dev/templatecontext.db
 node scripts/dev.mjs --db /absolute/path/to/dev/templatecontext.db
 # Equivalent: make dev DB=/absolute/path/to/dev/templatecontext.db
@@ -129,9 +130,9 @@ node scripts/dev.mjs --db /absolute/path/to/dev/templatecontext.db
 
 The launcher requires an explicit existing database, reads its port from `templatecontext.json`, starts Vite on `127.0.0.1:5173` with `TEMPLATECONTEXT_DEV_PORT` set to that port, then runs the existing binary with `serve --ui-dev http://127.0.0.1:5173`. It refuses occupied ports, waits for readiness and stops its processes on Ctrl-C, using the normal authenticated shutdown to flush database snapshots. It neither installs dependencies nor rebuilds the executable. Use `--binary PATH` for another executable or `--vite-port PORT` when 5173 is occupied. On Windows use `bin/templatecontext.exe` for the initialization commands; the launcher selects that default automatically.
 
-Open the reader at the project port (18098 in this example) and sign in with the development account, or run `bin/templatecontext open --db /absolute/path/to/dev/templatecontext.db` in another terminal. The browser stays on TemplateContext's origin: Go serves authentication and APIs, and proxies UI modules and the hot-reload WebSocket to Vite, which is an internal upstream. `--ui-dev` is a foreground `serve` option, accepts only a loopback HTTP upstream and is never stored in project configuration. Go code, hooks and migrations still need a rebuild and restart.
+Open the reader at the project port (18098 in this example) and sign in with the development password, or run `bin/templatecontext open --db /absolute/path/to/dev/templatecontext.db` in another terminal. The browser stays on TemplateContext's origin: Go serves authentication and APIs, and proxies UI modules and the hot-reload WebSocket to Vite, which is an internal upstream. `--ui-dev` is a foreground `serve` option, accepts only a loopback HTTP upstream and is never stored in project configuration. Go code, hooks and migrations still need a rebuild and restart.
 
-`node scripts/dev.mjs --db PATH --tunnel [--email EMAIL]` also runs `tunnel serve`, and prints the tunnel address and a one-time sign-in code for that account (default: the email in `templatecontext.json`), so a person on another computer can watch hot reload. They run `tunnel forward --address-stdin --url http://127.0.0.1:PORT` with the **same port** as the project and open `http://127.0.0.1:PORT/bundle/login#CODE`. The same-port rule is not optional: the server accepts only the Host `127.0.0.1:PORT` or `localhost:PORT`, and the development security policy pins the hot-reload WebSocket to `ws://127.0.0.1:PORT`, so a forward on any other port is refused. The address is printed on the terminal only; treat it as a secret.
+`node scripts/dev.mjs --db PATH --tunnel` also runs `tunnel serve`, and prints the tunnel address and a one-time sign-in code, so a person on another computer can watch hot reload. They run `tunnel forward --address-stdin --url http://127.0.0.1:PORT` with the **same port** as the project and open `http://127.0.0.1:PORT/bundle/login#CODE`. The same-port rule is not optional: the server accepts only the Host `127.0.0.1:PORT` or `localhost:PORT`, and the development security policy pins the hot-reload WebSocket to `ws://127.0.0.1:PORT`, so a forward on any other port is refused. The address is printed on the terminal only; treat it as a secret.
 
 Hot reload does not type-check. Run `pnpm typecheck`, `pnpm test` and `pnpm build` in `ui/` after changes, plus `node --test tests/dev_launcher.test.mjs` after launcher changes.
 
@@ -145,7 +146,7 @@ The browser checks use synthetic data. Install their pinned Chromium once with `
 | `(cd ui && pnpm typecheck && pnpm test)` | reader types and unit tests (Vitest) |
 | `make names` | `tests/name_check.py`: the retired product name appears nowhere in the repository or binary |
 | `make identity` | `tests/identity_check.py`: no template identity left in a derived product (inverted in the template) |
-| `make e2e` | `tests/e2e.py`: init, CLI, ownership, SQL policy, search, skill, lease, conflict and recover, remote mode, tunnel and login codes, in a temporary folder |
+| `make e2e` | `tests/e2e.py`: init, CLI, the single account and authentication on every API, SQL policy, search, skill, lease, conflict and recover, refusal of other releases' databases, remote mode, tunnel and login codes, in a temporary folder |
 | `node tests/reader_ui_browser.mjs` | the embedded reader in Chromium |
 | `node tests/ui_dev_browser.mjs` | hot reload through `serve --ui-dev`, and a same-port loopback forward |
 | `make windows` | the Windows cross-compile |
@@ -176,12 +177,12 @@ Without a folder, the installers use `~/.local/bin` or `%LOCALAPPDATA%\Programs\
 | Path | Content |
 | --- | --- |
 | `cmd/templatecontext` | entry point |
-| `internal/bundle` | project resolution, working copy and write-back, lease, local authentication routes, server lifecycle, UI development proxy |
+| `internal/bundle` | project resolution, working copy and write-back, lease, refusal of other releases' databases, local authentication routes, server lifecycle, UI development proxy |
 | `internal/client` | CLI commands, greetings, remote mode, skill installation, help |
 | `internal/tunnel` | `tunnel serve` and `tunnel forward` on tailcat: identity, port filter, loopback proxy |
-| `internal/pocketcontext` | vendored PocketContext server (SQL reads, snapshots, search); see `VENDORED.md` |
+| `internal/pocketcontext` | vendored PocketContext server (SQL reads, search, maintenance, tracing); see `VENDORED.md` |
 | `pb_hooks`, `pb_migrations` | schema and server-side rules |
-| `server.json` | SQL allowlist, snapshot filters and search index configuration |
+| `server.json` | SQL column allowlist and search index configuration |
 | `ui` | browser reader (React 19, Vite) |
 | `embed.go` | embeds `pb_hooks`, `pb_migrations`, `server.json`, `ui/dist` and `skills/templatecontext` |
 | `skills/templatecontext` | skill template (`SKILL.remote.md` for `skill --url`); `templatecontext skill` fills in absolute paths |

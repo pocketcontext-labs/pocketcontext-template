@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,7 +13,6 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 	"github.com/pocketcontext-labs/pocketcontext-template/internal/pocketcontext/searchread"
-	"github.com/pocketcontext-labs/pocketcontext-template/internal/pocketcontext/sqlread"
 )
 
 func searchFixture(t *testing.T) (*tests.TestApp, Config, string, string) {
@@ -167,9 +168,6 @@ func TestSearchRejectsUnsafeSources(t *testing.T) {
 			index := c.Search.Indexes["deals"]
 			index.Table = "deals"
 			c.Search.Indexes["deals"] = index
-		}},
-		{"filtered snapshot", func(c *Config) {
-			c.Snapshot = &sqlread.SnapshotConfig{Filters: map[string]string{"deals": "id=:requester"}}
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -340,5 +338,269 @@ func TestSearchScopedAuthorization(t *testing.T) {
 				t.Fatal("unsafe scoped configuration accepted")
 			}
 		})
+	}
+}
+
+// builtSearchFixture builds two indexes over synthetic PocketBase collections:
+// published revisions by manifest value with archived revisions excluded, and
+// every current (unarchived) revision without a scope.
+func builtSearchFixture(t *testing.T) (*tests.TestApp, Config, string) {
+	t.Helper()
+	app, token, _ := fixture(t)
+	for _, spec := range []struct {
+		name   string
+		fields []core.Field
+	}{
+		{"spaces", []core.Field{&core.TextField{Name: "name"}}},
+		{"page_revisions", []core.Field{&core.TextField{Name: "space"}, &core.TextField{Name: "title"}, &core.TextField{Name: "summary"}, &core.TextField{Name: "body"}, &core.BoolField{Name: "archived"}, &core.TextField{Name: "notes", Hidden: true}}},
+		{"publications", []core.Field{&core.TextField{Name: "space"}, &core.JSONField{Name: "manifest"}, &core.TextField{Name: "private", Hidden: true}}},
+	} {
+		c := core.NewBaseCollection(spec.name)
+		c.Fields.Add(spec.fields...)
+		if err := app.Save(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save := func(table, id string, values map[string]any) {
+		c, err := app.FindCollectionByNameOrId(table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := core.NewRecord(c)
+		r.Set("id", id)
+		for k, v := range values {
+			r.Set(k, v)
+		}
+		if err := app.Save(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save("spaces", "spacealpha00001", map[string]any{"name": "Alpha"})
+	save("spaces", "spacebravo00001", map[string]any{"name": "Bravo"})
+	for _, r := range []struct {
+		id, space, title, body string
+		archived               bool
+	}{
+		{"revalpha0000001", "spacealpha00001", "Rocket guide", "synthetic rocket launch checklist", false},
+		{"revalpha0000002", "spacealpha00001", "Garden", "rocket rocket in the garden", false},
+		{"revalpha0000003", "spacealpha00001", "Retired", "archived rocket draft", true},
+		{"revbravo0000001", "spacebravo00001", "Bravo rocket", "bravo rocket plans", false},
+	} {
+		save("page_revisions", r.id, map[string]any{"space": r.space, "title": r.title, "body": r.body, "archived": r.archived, "notes": "hidden rocket notes"})
+	}
+	save("publications", "publicalpha0001", map[string]any{"space": "spacealpha00001", "manifest": map[string]string{"pageguide000001": "revalpha0000001", "pagegarden00001": "revalpha0000002", "pageretired0001": "revalpha0000003"}})
+	save("publications", "publicbravo0001", map[string]any{"space": "spacebravo00001", "manifest": map[string]string{"pagebravo000001": "revbravo0000001"}})
+	cfg := Config{
+		AuthCollection: "agents",
+		Tables: map[string][]string{
+			"spaces":         {"id", "name"},
+			"page_revisions": {"id", "space", "title", "summary", "body", "archived"},
+			"publications":   {"id", "space", "manifest"},
+		},
+		TimeoutMS: 1000, MaxRows: 100, MaxBytes: 8192,
+		Search: &searchread.Config{Indexes: map[string]searchread.Index{
+			"pages":   {Collection: "page_revisions", Columns: []string{"title", "summary", "body"}, SnippetColumn: "body", Weights: []float64{8, 3, 1}, Scope: &searchread.Scope{Collection: "publications", Field: "manifest"}, Members: "visible", Where: "archived = 0"},
+			"current": {Collection: "page_revisions", Columns: []string{"title", "body"}, SnippetColumn: "body", Where: "archived = 0"},
+		}},
+	}
+	return app, cfg, token
+}
+
+func searchHTTP(t *testing.T, h http.Handler, token, body string) (int, searchread.Result, string) {
+	t.Helper()
+	r := request(h, "POST", "/api/context/search", token, body)
+	var result searchread.Result
+	if r.Code == http.StatusOK {
+		if err := json.Unmarshal(r.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return r.Code, result, r.Body.String()
+}
+
+func resultIDs(r searchread.Result) string {
+	out := []string{}
+	for _, h := range r.Hits {
+		out = append(out, h.ID)
+	}
+	return strings.Join(out, ",")
+}
+
+func TestBuiltSearchHTTP(t *testing.T) {
+	app, cfg, token := builtSearchFixture(t)
+	h, err := startConfiguredRouter(t, app, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, first, body := searchHTTP(t, h, token, `{"index":"pages","query":"rocket","scope":"publicalpha0001","limit":1}`)
+	if code != 200 || len(first.Hits) != 1 || !first.HasMore || len(first.Generation) != 64 || first.Scope != "publicalpha0001" {
+		t.Fatalf("first page: %d %s", code, body)
+	}
+	page := fmt.Sprintf(`{"index":"pages","query":"rocket","scope":"publicalpha0001","limit":1,"offset":1,"expectedGeneration":%q}`, first.Generation)
+	code, second, body := searchHTTP(t, h, token, page)
+	if code != 200 || len(second.Hits) != 1 || second.HasMore || second.Hits[0].ID == first.Hits[0].ID || strings.Contains(body, "revalpha0000003") {
+		t.Fatalf("second page (archived revision excluded): %d %s", code, body)
+	}
+	if code, r, body := searchHTTP(t, h, token, `{"index":"pages","query":"hidden notes","scope":"publicalpha0001"}`); code != 200 || len(r.Hits) != 0 {
+		t.Fatalf("hidden field searchable: %d %s", code, body)
+	}
+	if code, _, body := searchHTTP(t, h, token, `{"index":"pages","query":"rocket","scope":"publicmissing01"}`); code != 404 || !strings.Contains(body, "Search scope not found") {
+		t.Fatalf("missing scope: %d %s", code, body)
+	}
+	// Changes outside the scope keep the generation; indexed changes conflict.
+	other, err := app.FindRecordById("page_revisions", "revbravo0000001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.Set("body", "bravo rocket rocket")
+	if err := app.Save(other); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, body := searchHTTP(t, h, token, page); code != 200 {
+		t.Fatalf("unrelated change: %d %s", code, body)
+	}
+	garden, err := app.FindRecordById("page_revisions", "revalpha0000002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	garden.Set("archived", true)
+	if err := app.Save(garden); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, body := searchHTTP(t, h, token, page); code != 409 || strings.Contains(body, "rev") {
+		t.Fatalf("archiving a member: %d %s", code, body)
+	}
+	if code, r, body := searchHTTP(t, h, token, `{"index":"pages","query":"rocket","scope":"publicalpha0001"}`); code != 200 || resultIDs(r) != "revalpha0000001" {
+		t.Fatalf("after archiving: %d %s", code, body)
+	}
+	// A scope-less index searches every row that passes its where predicate.
+	if code, r, body := searchHTTP(t, h, token, `{"index":"current","query":"rocket"}`); code != 200 || resultIDs(r) != "revbravo0000001,revalpha0000001" || r.Scope != "" || len(r.Generation) != 64 {
+		t.Fatalf("scope-less index: %d %s", code, body)
+	}
+	if code, r, body := searchHTTP(t, h, token, `{"index":"current","query":"retired"}`); code != 200 || len(r.Hits) != 0 {
+		t.Fatalf("archived revision searched: %d %s", code, body)
+	}
+	for _, req := range []string{
+		`{"index":"pages","query":"rocket"}`,
+		`{"index":"current","query":"rocket","scope":"publicalpha0001"}`,
+		`{"index":"pages","query":"rocket","scope":"publicalpha0001","offset":1}`,
+		`{"index":"pages","query":"rocket","requester":"x"}`,
+	} {
+		if code, _, body := searchHTTP(t, h, token, req); code != 400 {
+			t.Fatalf("%s: %d %s", req, code, body)
+		}
+	}
+	schema := request(h, "GET", "/api/context/schema", token, "").Body.String()
+	if !strings.Contains(schema, `"maxIndexBytes":8388608`) || !strings.Contains(schema, `"indexes":["current","pages"]`) || !strings.Contains(schema, `"permissionModel":"shared"`) {
+		t.Fatalf("discovery: %s", schema)
+	}
+	for _, leak := range []string{"isolation", "snapshot", "archived = 0", "built_search", "where"} {
+		if strings.Contains(schema, leak) {
+			t.Fatalf("discovery leaks %s: %s", leak, schema)
+		}
+	}
+	for _, identity := range []string{"", "invalid"} {
+		if r := request(h, "POST", "/api/context/search", identity, `{"index":"current","query":"rocket"}`); r.Code != 401 && r.Code != 403 {
+			t.Fatalf("unauthenticated: %d %s", r.Code, r.Body)
+		}
+	}
+}
+
+func TestBuiltSearchHTTPLimits(t *testing.T) {
+	app, cfg, token := builtSearchFixture(t)
+	cfg.Search.MaxIndexBytes = 1024
+	h, err := startConfiguredRouter(t, app, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := `{"index":"pages","query":"rocket","scope":"publicalpha0001"}`
+	if code, _, body := searchHTTP(t, h, token, query); code != 200 {
+		t.Fatalf("before: %d %s", code, body)
+	}
+	r, err := app.FindRecordById("page_revisions", "revalpha0000002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Set("body", strings.Repeat("rocket ", 200))
+	if err := app.Save(r); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, body := searchHTTP(t, h, token, query); code != 413 || !strings.Contains(body, "Search content exceeds configured limits") || strings.Contains(body, "rev") {
+		t.Fatalf("index limit: %d %s", code, body)
+	}
+}
+
+func TestBuiltSearchHTTPRejectsConfiguration(t *testing.T) {
+	for _, name := range []string{"unconfigured column", "hidden column", "unconfigured scope field", "hidden scope field", "where unconfigured column", "where hidden column", "where binds", "generation", "persisted with where", "bad limits", "limits without built index", "isolation"} {
+		t.Run(name, func(t *testing.T) {
+			app, cfg, _ := builtSearchFixture(t)
+			idx := cfg.Search.Indexes["pages"]
+			switch name {
+			case "unconfigured column":
+				cfg.Tables["page_revisions"] = []string{"id", "space", "title", "body", "archived"}
+			case "hidden column":
+				cfg.Tables["page_revisions"] = append(cfg.Tables["page_revisions"], "notes")
+				idx.Columns, idx.SnippetColumn, idx.Weights = []string{"notes"}, "notes", nil
+			case "unconfigured scope field":
+				idx.Scope.Field = "space"
+				cfg.Tables["publications"] = []string{"id", "manifest"}
+			case "hidden scope field":
+				cfg.Tables["publications"] = append(cfg.Tables["publications"], "private")
+				idx.Scope.Field = "private"
+			case "where unconfigured column":
+				idx.Where = "created > ''"
+			case "where hidden column":
+				idx.Where = "notes = ''"
+			case "where binds":
+				idx.Where = "title = :title"
+			case "generation":
+				idx.Generation = &searchread.Generation{Collection: "publications", Record: "publicalpha0001", Field: "space"}
+			case "persisted with where":
+				idx.Table = "pages_search"
+			case "bad limits":
+				cfg.Search.MaxIndexBytes = searchread.MaxMaxIndexBytes + 1
+			case "limits without built index":
+				cfg.Search = &searchread.Config{Indexes: map[string]searchread.Index{"deals": {Table: "deal_search", Collection: "page_revisions", Columns: []string{"title"}, SnippetColumn: "title"}}, CacheBytes: 1 << 20}
+			}
+			if name != "limits without built index" {
+				cfg.Search.Indexes["pages"] = idx
+			}
+			if name == "isolation" {
+				// Per-requester isolation is gone; its configuration key is unknown.
+				path := filepath.Join(t.TempDir(), "context.json")
+				text := `{"authCollection":"agents","tables":{"page_revisions":["id","title"]},"search":{"indexes":{"pages":{"isolation":"private","collection":"page_revisions","columns":["title"],"snippetColumn":"title"}}}}`
+				if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := LoadConfig(path); err == nil {
+					t.Fatal("isolation accepted")
+				}
+				return
+			}
+			if _, err := startConfiguredRouter(t, app, cfg); err == nil {
+				t.Fatal("unsafe configuration accepted")
+			}
+		})
+	}
+}
+
+// The embedded server.json loads, has no snapshot block, and keeps every
+// index built over configured columns.
+func TestEmbeddedConfigurationLoads(t *testing.T) {
+	cfg, err := LoadConfig(filepath.Join("..", "..", "..", "server.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join("..", "..", "..", "server.json"))
+	if strings.Contains(string(data), `"snapshot"`) || strings.Contains(string(data), `"isolation"`) || cfg.Search == nil || len(cfg.Search.Indexes) == 0 {
+		t.Fatalf("server.json: %+v", cfg)
+	}
+	for alias, index := range cfg.Search.Indexes {
+		if !searchread.Built(index) {
+			t.Fatalf("%s is not built", alias)
+		}
+	}
+	if cfg.Search.MaxIndexBytes != 8388608 || cfg.Search.CacheBytes != 67108864 {
+		t.Fatalf("limits: %+v", cfg.Search)
 	}
 }

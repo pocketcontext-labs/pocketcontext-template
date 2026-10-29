@@ -8,40 +8,35 @@ or --db PATH, or TEMPLATECONTEXT_DB), the storage/ folder and templatecontext.js
 beside it. They may live in iCloud Drive, OneDrive, Dropbox or Google Drive.
 
 Setup and server:
-  init --email EMAIL [--name NAME] [--port N] [--password-stdin]
-                       create the project and local account, start the server
+  init [--port N] [--password-stdin]
+                       create the project and its one account (asks for the
+                       reader password), start the server
   ensure-running       start the server in the background unless it runs (alias: start)
   serve [--ui-dev URL]  run in the foreground; optionally proxy a loopback Vite UI
   stop                 write back the database and stop the server
   status               show paths, port, lease and whether the server runs
-  open [--email EMAIL] [--no-browser]
-                       open the reader signed in (single-use link, valid for
-                       2 minutes); --email signs in as that account, e.g. to
-                       open the printed link on a computer that uses --url
+  open [--no-browser]  open the reader signed in (single-use link, valid for
+                       2 minutes); --no-browser prints the link, e.g. to open
+                       it on a computer that uses --url
   password [--password-stdin]
                        change the reader password
-  account --email EMAIL [--name NAME] [--password-stdin]
-                       create another account on this server, e.g. for a
-                       person using it with --url. Without --password-stdin
-                       it never prompts: a new account gets a random password
-                       nobody knows and an existing one keeps its password
-  login-code --email EMAIL [--ttl SECONDS]
-                       print a one-time sign-in code for that account (single
-                       use, kept in server memory only, default 600 seconds,
-                       30-600) for ` + "`login --url URL --code-stdin`" + `
+  login-code [--ttl SECONDS]
+                       print a one-time sign-in code (single use, kept in
+                       server memory only, default 600 seconds, 30-600) for
+                       ` + "`login --url URL --code-stdin`" + `
   flush                write the database back to the synced folder now
   recover --keep local|synced
                        resolve unsaved changes when the synced file also changed
   skill [--agent claude-code|codex|antigravity|all] [--dir DIR]
                        install the agent skill with this computer's paths
 
-Greetings (each account sees only its own; reads use SQL and full-text search):
+Greetings (reads use SQL and full-text search; every request needs a sign-in):
   add MESSAGE|-                      add a greeting (1-500 characters)
-  list [--limit N]                   list your greetings, newest first
+  list [--limit N]                   list the greetings, newest first
   search TERMS [--limit N] [--offset N --generation G]
-                                     rank your greetings by full-text match
+                                     rank the greetings by full-text match
   sql|query SQL|-                    run one read-only SELECT
-  whoami | schema                    the signed-in account; the readable schema
+  whoami | schema                    the session's account ID; the readable schema
 
 Tunnel (carry the server's port to another computer; foreground, Ctrl-C stops):
   tunnel serve [--new-address]
@@ -59,20 +54,20 @@ Remote client (the server runs on another computer, reached through
                        sign in with a one-time code from ` + "`login-code`" + ` on the
                        agent computer, read from standard input; stores only
                        a token in the private cache
-  login --url URL --email EMAIL [--password-stdin]
-                       sign in with a password instead
+  login --url URL [--password-stdin]
+                       sign in with the reader password instead
   logout --url URL     forget the stored session
   status --url URL     show whether the server answers and the sign-in
   open --url URL [--no-browser]
-                       open the reader (sign in with email and password, or
-                       open a link from ` + "`open --email EMAIL --no-browser`" + ` run
-                       on the agent computer)
+                       open the reader (sign in with the password, or open
+                       a link from ` + "`open --no-browser`" + ` run on the agent
+                       computer)
   skill --url URL [--agent A] [--dir DIR]
                        install the agent skill for the remote server
   Greeting commands work with --url. URL must be http://127.0.0.1:PORT or
   http://localhost:PORT. Remote mode never creates a database or starts a
-  server; serve, start, ensure-running, stop, flush, recover, init, password,
-  account and login-code are not available with --url.
+  server; serve, start, ensure-running, stop, flush, recover, init, password
+  and login-code are not available with --url.
 
 Run ` + "`templatecontext help COMMAND`" + ` or ` + "`templatecontext COMMAND --help`" + ` for usage, details and an example.
 Options for every command: --db PATH or --url URL, --pretty.

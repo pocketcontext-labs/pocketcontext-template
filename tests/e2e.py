@@ -23,6 +23,8 @@ import urllib.error
 import urllib.request
 
 PASSWORD = 'synthetic test password'
+# The sign-in identity of the project's one account (bundle.AccountEmail).
+ACCOUNT_EMAIL = 'account@local.invalid'
 # The retired product name, assembled from parts so this file never contains it.
 RETIRED = 'wi' + 'ki'
 # Inherited variables of this program, of the application it was derived from and
@@ -213,8 +215,9 @@ def main():
         pc = Project(binary, Path(temp))
         try:
             scenario(pc)
-            ownership_scenario(pc)
+            single_user_scenario(pc)
             sync_scenario(pc)
+            earlier_release_scenario(pc)
             remote = Remote(binary, Path(temp) / 'other-computer', pc.url)
             remote_scenario(pc, remote)
             tunnel_scenario(pc, remote)
@@ -231,11 +234,19 @@ def messages(rows):
     return [row['message'] for row in rows]
 
 
-def token(pc, email, password):
-    status, body = pc.http('POST', '/api/collections/users/auth-with-password', {'identity': email, 'password': password})
+def token(pc, password):
+    status, body = pc.http('POST', '/api/collections/users/auth-with-password', {'identity': ACCOUNT_EMAIL, 'password': password})
     if status != 200:
-        raise AssertionError(f'password sign-in for {email}: HTTP {status} {body!r}')
+        raise AssertionError(f'password sign-in: HTTP {status} {body!r}')
     return json.loads(body)['token']
+
+
+def local_key(pc):
+    """The private local key the server wrote to this computer's cache."""
+    keys = list((user_cache(pc.home) / 'templatecontext').glob('*/local.key'))
+    if len(keys) != 1:
+        raise AssertionError(f'expected one local key, found {keys}')
+    return keys[0].read_text(encoding='utf-8').strip()
 
 
 def scenario(pc):
@@ -249,24 +260,30 @@ def scenario(pc):
     check('unknown command' in pc.run('help', 'no-such-command', expect=2).stderr, 'help refuses an unknown command')
     check('unknown command' in pc.run('ingest', 'x', expect=2).stderr, 'knowledge-base commands are not part of the template')
 
-    init = pc.json('init', '--email', 'tester@example.localhost', '--name', 'Tester', '--port', str(pc.port),
-                   '--password-stdin', stdin=PASSWORD + '\n')
-    check(init['accountCreated'] and init['url'] == pc.url and init['newProject'], 'init creates the account and starts the server')
+    pc.run('init', '--email', 'tester@example.localhost', '--port', str(pc.port), '--password-stdin', stdin=PASSWORD + '\n', expect=2)
+    check(not pc.db.exists(), 'init has no --email: the project has one account without a chosen identity')
+    init = pc.json('init', '--port', str(pc.port), '--password-stdin', stdin=PASSWORD + '\n')
+    check(init['accountCreated'] and init['url'] == pc.url and init['newProject'] and 'email' not in init,
+          'init creates the account and starts the server')
     check(pc.db.exists(), 'init writes the database to the project folder')
+    config = json.loads((pc.project / 'templatecontext.json').read_text(encoding='utf-8'))
+    check(sorted(config) == ['instance', 'port'], f'templatecontext.json holds only the port and project ID: {config}')
     me = pc.json('whoami')
-    check(me['email'] == 'tester@example.localhost' and me['name'] == 'Tester' and me['db'] == str(pc.db), 'whoami reports the local account')
+    check(sorted(me) == ['db', 'id', 'url'] and me['db'] == str(pc.db), 'whoami reports the account ID, URL and database')
+    again = pc.json('init', '--port', str(pc.port))
+    check(not again['accountCreated'] and not again['newProject'] and pc.json('whoami')['id'] == me['id'],
+          'init on an existing project keeps its account and password')
     check(pc.json('list') == [], 'a new project has no greetings')
     schema = pc.json('schema')
     tables = {t['name']: sorted(c['name'] for c in t['columns']) for t in schema['tables']}
-    check(tables == {'greetings': ['created', 'id', 'message', 'owner', 'updated'], 'user_directory': ['id', 'name']},
-          f'the SQL schema exposes only greetings and user_directory: {tables}')
-    check(schema['permissionModel'] == 'filtered-snapshot' and schema['search']['indexes'] == ['greetings']
-          and schema['search']['isolation'] == 'private', 'reads use filtered snapshots and a private greetings index')
+    check(tables == {'greetings': ['created', 'id', 'message', 'updated']}, f'the SQL schema exposes only greetings: {tables}')
+    check(schema['permissionModel'] == 'shared' and schema['search']['indexes'] == ['greetings'] and 'isolation' not in schema['search']
+          and 'snapshotLimits' not in schema, 'reads use the live database and a shared greetings index')
 
     first = pc.json('add', 'Hello from the espresso machine ✓')
     second = pc.json('add', '-', stdin='Café greetings to everyone 😀\n')
-    check(first['owner'] == me['id'] and first['message'] == 'Hello from the espresso machine ✓' and set(first) == {'id', 'message', 'owner', 'created', 'updated'},
-          'add creates a greeting owned by the signed-in account')
+    check(first['message'] == 'Hello from the espresso machine ✓' and set(first) == {'id', 'message', 'created', 'updated'},
+          'add creates a greeting')
     check(second['message'] == 'Café greetings to everyone 😀', 'add - reads the message from standard input')
     check(messages(pc.json('list')) == [second['message'], first['message']], 'list shows the greetings newest first')
     check(messages(pc.json('list', '--limit', '1')) == [second['message']], 'list --limit bounds the result')
@@ -292,9 +309,9 @@ def scenario(pc):
 
     rows = pc.json('sql', 'SELECT count(*) FROM greetings')['rows']
     check(rows == [[6]], 'sql counts the greetings')
-    joined = pc.json('query', 'SELECT u.name FROM greetings g JOIN user_directory u ON u.id = g.owner LIMIT 1')['rows']
-    check(joined == [['Tester']], 'sql joins greetings to the user directory')
-    for denied in ('SELECT * FROM users', 'SELECT * FROM sqlite_schema', 'SELECT * FROM dbstat', 'SELECT * FROM pragma_table_info(\'greetings\')',
+    newest = pc.json('query', 'SELECT message FROM greetings ORDER BY created DESC, id DESC LIMIT 1')['rows']
+    check(newest == [['Paged hello number 3']], 'query is an alias of sql')
+    for denied in ('SELECT * FROM users', 'SELECT email FROM users', 'SELECT * FROM user_directory', 'SELECT * FROM sqlite_schema', 'SELECT * FROM dbstat', 'SELECT * FROM pragma_table_info(\'greetings\')',
                    "DELETE FROM greetings", "INSERT INTO greetings(message) VALUES ('x')"):
         pc.run('sql', denied, expect=1)
     check(pc.json('sql', 'SELECT count(*) FROM greetings')['rows'] == [[6]], 'the SQL reader refuses credentials, metadata and writes')
@@ -325,10 +342,10 @@ def scenario(pc):
     check(status == 200 and b'TemplateContext sign-in' in page_html, 'the sign-in page is served')
     code = link.split('#', 1)[1]
     status, body = pc.http('POST', '/api/bundle/redeem', {'code': code})
-    check(status == 200 and json.loads(body)['record']['email'] == 'tester@example.localhost', 'the sign-in link signs in')
+    check(status == 200 and json.loads(body)['record']['id'] == me['id'], 'the sign-in link signs in the account')
     status, _ = pc.http('POST', '/api/bundle/redeem', {'code': code})
     check(status == 401, 'the sign-in link is single-use')
-    token(pc, 'tester@example.localhost', PASSWORD)
+    token(pc, PASSWORD)
     check(True, 'the reader password works')
 
     pc.json('stop')
@@ -370,41 +387,104 @@ def scenario(pc):
           and every['installed']['antigravity'].startswith('skipped'), 'skill skips agents whose configuration folder is missing')
 
 
-def ownership_scenario(pc):
-    """The server, not the client, decides who owns a greeting; accounts see only their own."""
-    other_password = 'synthetic other password'
-    other = pc.json('account', '--email', 'other@example.localhost', '--name', 'Other', '--password-stdin', stdin=other_password + '\n')
-    mine = token(pc, 'tester@example.localhost', PASSWORD)
-    theirs = token(pc, 'other@example.localhost', other_password)
+def single_user_scenario(pc):
+    """One hidden account reads and writes every greeting; nobody else gets in, and no second account exists."""
+    mine = token(pc, PASSWORD)
     me = pc.json('whoami')['id']
+    key = local_key(pc)
 
-    status, body = pc.http('POST', '/api/collections/greetings/records', {'message': 'Forged owner', 'owner': me}, headers={'Authorization': theirs})
+    # The account is the only one: the server refuses a second, whichever way it is asked for.
+    status, body = pc.http('POST', '/api/bundle/account', {'password': 'synthetic second password'},
+                           headers={'X-TemplateContext-Local-Key': key})
+    check(status == 400 and b'exactly one' in body, f'the server refuses a second account: {status} {body!r}')
+    check(token(pc, PASSWORD) and pc.json('whoami')['id'] == me, 'the refused second account changes nothing')
+    for headers in ({}, {'Authorization': mine}):
+        status, _ = pc.http('POST', '/api/collections/users/records', {'email': 'second@example.localhost', 'password': 'synthetic second password',
+                                                                      'passwordConfirm': 'synthetic second password'}, headers=headers)
+        check(status in (400, 403), f'the records API creates no account ({"signed in" if headers else "anonymous"})')
+    status, body = pc.http('GET', '/api/collections/users/records', headers={'Authorization': mine})
+    check(status == 403 or (status == 200 and me not in body.decode()), 'accounts cannot be listed')
+    status, _ = pc.http('DELETE', f'/api/collections/users/records/{me}', headers={'Authorization': mine})
+    check(status in (403, 404), 'the account cannot be deleted')
+    status, _ = pc.http('POST', '/api/bundle/account', {'password': 'synthetic second password'})
+    check(status == 403, 'creating the account requires the local key')
+    status, _ = pc.http('POST', '/api/bundle/password', {'password': 'synthetic new password'})
+    check(status == 403, 'changing the password requires the local key')
+    pc.json('flush')
+    with closing(sqlite3.connect(f'file:{pc.db.as_posix()}?mode=ro', uri=True)) as db:
+        accounts = db.execute('SELECT id, email FROM users').fetchall()
+    check(accounts == [(me, ACCOUNT_EMAIL)], f'the database holds exactly one account: {accounts}')
+
+    # Every greeting belongs to the project: the account reads, edits and deletes them all.
+    status, body = pc.http('POST', '/api/collections/greetings/records', {'message': 'Through the records API', 'owner': me}, headers={'Authorization': mine})
     created = json.loads(body)
-    check(status == 200 and created['owner'] == other['id'], 'create sets the owner to the requester, whatever was sent')
-    status, _ = pc.http('POST', '/api/collections/greetings/records', {'message': 'Anonymous'})
-    check(status in (400, 401, 403), 'anonymous create is refused')
-    status, _ = pc.http('PATCH', f"/api/collections/greetings/records/{created['id']}", {'owner': me}, headers={'Authorization': theirs})
-    check(status == 400, 'the owner of a greeting is immutable')
-    status, body = pc.http('PATCH', f"/api/collections/greetings/records/{created['id']}", {'message': 'Edited by its owner'}, headers={'Authorization': theirs})
-    check(status == 200 and json.loads(body)['message'] == 'Edited by its owner', 'the owner can edit the message')
-    status, _ = pc.http('PATCH', f"/api/collections/greetings/records/{created['id']}", {'message': 'Hijacked'}, headers={'Authorization': mine})
-    check(status == 404, 'another account cannot edit the greeting')
+    check(status == 200 and 'owner' not in created and created['message'] == 'Through the records API', 'the records API creates a greeting without an owner')
+    status, body = pc.http('GET', '/api/collections/greetings/records?perPage=100', headers={'Authorization': mine})
+    listed = {item['id'] for item in json.loads(body)['items']}
+    check(status == 200 and created['id'] in listed and len(listed) == pc.json('sql', 'SELECT count(*) FROM greetings')['rows'][0][0],
+          'the account lists every greeting through the records API')
+    check(created['id'] in json.dumps(pc.json('list')) and [g['id'] for g in pc.json('search', 'records')['greetings']] == [created['id']]
+          and pc.json('sql', f"SELECT message FROM greetings WHERE id = '{created['id']}'")['rows'] == [['Through the records API']],
+          'list, search and SQL read the greeting')
+    status, body = pc.http('PATCH', f"/api/collections/greetings/records/{created['id']}", {'message': 'Edited greeting'}, headers={'Authorization': mine})
+    check(status == 200 and json.loads(body)['message'] == 'Edited greeting', 'the account edits a greeting')
+
+    # Authentication stays on for every read and write.
+    for headers, who in (({}, 'anonymous'), ({'Authorization': 'not-a-valid-token'}, 'an invalid token')):
+        status, _ = pc.http('POST', '/api/context/query', {'sql': 'SELECT count(*) FROM greetings'}, headers=headers)
+        check(status == 401, f'SQL refuses {who}')
+        status, _ = pc.http('GET', '/api/context/schema', headers=headers)
+        check(status == 401, f'the schema refuses {who}')
+        status, _ = pc.http('POST', '/api/context/search', {'index': 'greetings', 'query': 'edited'}, headers=headers)
+        check(status == 401, f'search refuses {who}')
+        status, body = pc.http('GET', '/api/collections/greetings/records', headers=headers)
+        check(status in (200, 401, 403) and b'Edited greeting' not in body, f'record listing shows {who} no greetings')
+        status, _ = pc.http('GET', f"/api/collections/greetings/records/{created['id']}", headers=headers)
+        check(status in (401, 403, 404), f'reading a greeting refuses {who}')
+        status, _ = pc.http('POST', '/api/collections/greetings/records', {'message': 'Intruder'}, headers=headers)
+        check(status in (400, 401, 403), f'adding a greeting refuses {who}')
+        status, _ = pc.http('PATCH', f"/api/collections/greetings/records/{created['id']}", {'message': 'Hijacked'}, headers=headers)
+        check(status in (401, 403, 404), f'editing a greeting refuses {who}')
+        status, _ = pc.http('DELETE', f"/api/collections/greetings/records/{created['id']}", headers=headers)
+        check(status in (401, 403, 404), f'deleting a greeting refuses {who}')
+    check(pc.json('sql', f"SELECT message FROM greetings WHERE id = '{created['id']}'")['rows'] == [['Edited greeting']],
+          'refused requests change nothing')
     status, _ = pc.http('DELETE', f"/api/collections/greetings/records/{created['id']}", headers={'Authorization': mine})
-    check(status == 404, 'another account cannot delete the greeting')
-    status, body = pc.http('GET', '/api/collections/greetings/records', headers={'Authorization': mine})
-    check(status == 200 and created['id'] not in body.decode(), 'record listing shows only own greetings')
-    check(created['id'] not in json.dumps(pc.json('list')) and pc.json('search', 'edited')['greetings'] == []
-          and pc.json('sql', f"SELECT id FROM greetings WHERE id = '{created['id']}'")['rows'] == [],
-          'list, search and SQL never show another account greetings')
-    check(pc.json('sql', 'SELECT id, name FROM user_directory')['rows'] == [[me, 'Tester']], 'the user directory shows only the requester')
-    status, body = pc.http('POST', '/api/context/search', {'index': 'greetings', 'query': 'edited'}, headers={'Authorization': theirs})
-    result = json.loads(body)
-    check(status == 200 and [h['id'] for h in result['hits']] == [created['id']] and result['index'] == 'greetings',
-          'the search API returns the owner own hits')
-    status, _ = pc.http('DELETE', f"/api/collections/greetings/records/{created['id']}", headers={'Authorization': theirs})
-    check(status == 204, 'the owner can delete the greeting')
-    status, _ = pc.http('DELETE', f"/api/collections/users/records/{other['id']}", headers={'Authorization': theirs})
-    check(status in (403, 404), 'accounts cannot be deleted')
+    check(status == 204, 'the account deletes a greeting')
+
+    # password changes the reader password and, like any PocketBase password change, revokes earlier tokens.
+    new_password = 'synthetic changed password'
+    check(pc.json('password', '--password-stdin', stdin=new_password + '\n') == {'password': 'changed'}, 'password changes the reader password')
+    status, _ = pc.http('POST', '/api/collections/users/auth-with-password', {'identity': ACCOUNT_EMAIL, 'password': PASSWORD})
+    check(status == 400, 'the old password no longer signs in')
+    status, _ = pc.http('POST', '/api/context/query', {'sql': 'SELECT 1'}, headers={'Authorization': mine})
+    check(status == 401, 'a password change revokes earlier sessions')
+    token(pc, new_password)
+    pc.json('password', '--password-stdin', stdin=PASSWORD + '\n')
+    token(pc, PASSWORD)
+    check(True, 'the password can be changed back')
+
+
+def earlier_release_scenario(pc):
+    """A database created by an earlier, multi-account release is refused before any migration, unchanged."""
+    pc.json('flush')
+    folder = pc.root / 'Earlier'
+    folder.mkdir()
+    old = folder / 'templatecontext.db'
+    shutil.copyfile(pc.db, old)
+    with closing(sqlite3.connect(old)) as db:
+        db.execute("INSERT INTO _migrations(file, applied) VALUES ('1800000000_users.js', 1)")
+        db.execute('CREATE TABLE user_directory(id TEXT PRIMARY KEY, name TEXT)')
+        db.commit()
+    port = free_port()
+    (folder / 'templatecontext.json').write_text(json.dumps({'port': port}), encoding='utf-8')
+    before = hashlib.sha256(old.read_bytes()).hexdigest()
+    result = subprocess.run([str(pc.binary), '--db', str(old), 'ensure-running'], capture_output=True, text=True, encoding='utf-8',
+                            env=pc.env, timeout=120)
+    check(result.returncode == 1 and 'different TemplateContext release' in result.stderr and '1800000000_users.js' in result.stderr,
+          f'a database of an earlier release is refused with a clear message: {result.stderr.strip()[-300:]}')
+    check(hashlib.sha256(old.read_bytes()).hexdigest() == before and not listening(port), 'the refused database is left unchanged and nothing serves it')
+    check(sorted(p.name for p in folder.iterdir()) == ['templatecontext.db', 'templatecontext.json'], 'the refusal writes nothing beside the database')
 
 
 def server_pid(pc):
@@ -429,10 +509,9 @@ def replace_elsewhere(pc, message):
     copy = work / 'copy.db'
     shutil.copyfile(pc.db, copy)
     with closing(sqlite3.connect(copy)) as db:
-        owner = db.execute('SELECT id FROM users ORDER BY created LIMIT 1').fetchone()[0]
         record = hashlib.sha256(message.encode()).hexdigest()[:15]
-        db.execute("INSERT INTO greetings(id, message, owner, created, updated) VALUES (?, ?, ?, '2026-01-01 00:00:00.000Z', '2026-01-01 00:00:00.000Z')",
-                   (record, message, owner))
+        db.execute("INSERT INTO greetings(id, message, created, updated) VALUES (?, ?, '2026-01-01 00:00:00.000Z', '2026-01-01 00:00:00.000Z')",
+                   (record, message))
         db.commit()
         db.execute('PRAGMA journal_mode=DELETE')
     os.replace(copy, pc.db)
@@ -499,46 +578,43 @@ def sync_scenario(pc):
 
 def remote_scenario(pc, r):
     instance = json.loads((pc.project / 'templatecontext.json').read_text(encoding='utf-8'))['instance']
-    user_password = 'synthetic user password'
-    account = pc.json('account', '--email', 'user@example.localhost', '--name', 'User', '--password-stdin', stdin='first password\n')
-    check(account['created'] and account['email'] == 'user@example.localhost', 'account creates another server account')
-    again = pc.json('account', '--email', 'user@example.localhost', '--name', 'User', '--password-stdin', stdin=user_password + '\n')
-    check(not again['created'] and again['id'] == account['id'], 'account resets the password of an existing account')
+    me = pc.json('whoami')['id']
 
     missing = r.run('whoami', expect=2)
     check('templatecontext login' in missing.stderr, 'remote data commands require login')
     status = r.json('status')
     check(status['url'] == pc.url and status['reachable'] and not status['loggedIn'], 'remote status reports reachable and logged out')
-    r.run('login', '--email', 'user@example.localhost', '--password-stdin', stdin='wrong password\n', expect=1)
-    login = r.json('login', '--email', 'user@example.localhost', '--password-stdin', stdin=user_password + '\n')
-    check(login == {'url': pc.url, 'email': 'user@example.localhost', 'instance': instance}, 'remote login reports the instance')
+    r.run('login', '--password-stdin', stdin='wrong password\n', expect=1)
+    r.run('login', '--email', ACCOUNT_EMAIL, '--password-stdin', stdin=PASSWORD + '\n', expect=2)
+    check(not r.json('status')['loggedIn'], 'remote login refuses a wrong password and has no --email')
+    login = r.json('login', '--password-stdin', stdin=PASSWORD + '\n')
+    check(login == {'url': pc.url, 'instance': instance}, 'remote login with the password reports the instance')
     session = r.session()
     check(session.parent.name == 'remote-' + hashlib.sha256(pc.url.encode()).hexdigest()[:16], 'the session is keyed by the URL')
     if os.name != 'nt':
         check(session.stat().st_mode & 0o777 == 0o600, 'the remote session is private')
-    check(PASSWORD not in session.read_text(encoding='utf-8') and user_password not in session.read_text(encoding='utf-8'),
-          'the session file holds no password')
+    check(PASSWORD not in session.read_text(encoding='utf-8') and ACCOUNT_EMAIL not in session.read_text(encoding='utf-8'),
+          'the session file holds no password or account email')
     status = r.json('status')
-    check(status['loggedIn'] and status['email'] == 'user@example.localhost' and status['instance'] == instance, 'remote status reports the session')
+    check(status['loggedIn'] and status['instance'] == instance and 'email' not in status, 'remote status reports the session')
     env_status = r.json('status', url=False, env={'TEMPLATECONTEXT_URL': pc.url})
     check(env_status['url'] == pc.url and env_status['loggedIn'], 'TEMPLATECONTEXT_URL selects remote mode')
 
-    me = r.json('whoami')
-    check(me['email'] == 'user@example.localhost' and me['id'] == account['id'] and me['url'] == pc.url and 'db' not in me,
-          'remote whoami reports the account without a database')
-    check(r.json('list') == [], 'a new remote account sees no greetings of the local account')
+    remote_me = r.json('whoami')
+    check(remote_me == {'id': me, 'url': pc.url}, 'remote whoami reports the same account without a database')
+    check(messages(r.json('list')) == messages(pc.json('list')), 'the remote client sees the same greetings')
     added = r.json('add', 'Rooibosquartz greetings from the other computer')
-    check(added['owner'] == account['id'], 'remote add is attributed to the signed-in account')
-    check(messages(r.json('list')) == ['Rooibosquartz greetings from the other computer'], 'remote list shows the remote greeting')
+    check(messages(r.json('list'))[0] == 'Rooibosquartz greetings from the other computer', 'remote list shows the remote greeting')
     check([g['id'] for g in r.json('search', 'rooibosquartz')['greetings']] == [added['id']], 'remote search finds the remote greeting')
-    check(r.json('sql', 'SELECT count(*) FROM greetings')['rows'] == [[1]], 'remote SQL sees only its own greetings')
-    check(pc.json('sql', f"SELECT id FROM greetings WHERE id='{added['id']}'")['rows'] == [] and pc.json('search', 'rooibosquartz')['greetings'] == [],
-          'the local account cannot read the remote account greetings')
+    check(r.json('sql', 'SELECT count(*) FROM greetings')['rows'] == pc.json('sql', 'SELECT count(*) FROM greetings')['rows'],
+          'remote SQL reads the same greetings')
+    check([g['id'] for g in pc.json('search', 'rooibosquartz')['greetings']] == [added['id']], 'the local client reads the remote greeting')
 
-    for args in (['stop'], ['ensure-running'], ['start'], ['serve'], ['flush'], ['recover', '--keep', 'local'], ['init', '--email', 'x@example.localhost'],
-                 ['password', '--password-stdin'], ['account', '--email', 'x@example.localhost', '--password-stdin']):
+    for args in (['stop'], ['ensure-running'], ['start'], ['serve'], ['flush'], ['recover', '--keep', 'local'], ['init'],
+                 ['password', '--password-stdin'], ['login-code']):
         refused = r.run(*args, expect=2)
         check('not available with --url' in refused.stderr, f'{args[0]} is refused in remote mode')
+    check('unknown command' in r.run('account', expect=2).stderr, 'there is no account command')
     check(pc.json('status')['running'], 'the server keeps running after refused remote commands')
     check(r.run('whoami', '--db', str(pc.db), expect=None).returncode == 2, '--url with --db is refused')
     for url in ('http://example.com:8098', 'http://10.0.0.1:8098', 'https://127.0.0.1:8098'):
@@ -549,7 +625,7 @@ def remote_scenario(pc, r):
         check(http_status(via + '/api/bundle/instance') == 403, 'a forward on a different port fails the Host check')
         check(not r.json('status', url=via)['reachable'], 'remote status through a wrong-port forward is not reachable')
         check(r.run('whoami', url=via, expect=None).returncode == 1, 'remote whoami through a wrong-port forward fails')
-        login = r.run('login', '--email', 'user@example.localhost', '--password-stdin', stdin=user_password + '\n', url=via, expect=None)
+        login = r.run('login', '--password-stdin', stdin=PASSWORD + '\n', url=via, expect=None)
         check(login.returncode == 1, 'remote login through a wrong-port forward fails')
 
     closed = free_port()
@@ -564,7 +640,7 @@ def remote_scenario(pc, r):
     other = r.run('whoami', expect=1)
     check('different' in other.stderr and 'sign in again' in other.stderr, 'a session for another instance is refused')
     session.write_text(original, encoding='utf-8')
-    check(r.json('whoami')['id'] == account['id'], 'the restored session works again')
+    check(r.json('whoami')['id'] == me, 'the restored session works again')
 
     skills = r.root / 'skill'
     r.json('skill', '--dir', str(skills))
@@ -605,36 +681,21 @@ def tunnel_scenario(pc, r):
 
 
 def codes_scenario(pc, r):
-    """One-time sign-in codes and accounts without a password."""
+    """One-time sign-in codes for the project's account."""
     # Started first so the 30-second expiry overlaps the other checks.
-    expiring = pc.json('login-code', '--email', 'tester@example.localhost', '--ttl', '30')
+    expiring = pc.json('login-code', '--ttl', '30')
     expiring_at = time.monotonic()
-    check(expiring['email'] == 'tester@example.localhost' and expiring['code'] and expiring['expires'],
+    check(sorted(expiring) == ['code', 'expires'] and expiring['code'] and expiring['expires'],
           'login-code accepts the minimum lifetime of 30 seconds')
+    me = pc.json('whoami')['id']
 
-    coder = pc.json('account', '--email', 'coder@example.localhost', '--name', 'Coder', stdin='')
-    check(coder['created'] and coder['email'] == 'coder@example.localhost', 'account without a password creates the account')
-    coder_again = pc.json('account', '--email', 'coder@example.localhost', '--name', 'Coder', stdin='')
-    check(not coder_again['created'] and coder_again['id'] == coder['id'], 'account without a password is repeatable')
-    r.run('login', '--email', 'coder@example.localhost', '--password-stdin', stdin='synthetic guess\n', expect=1)
-    check(not r.json('status')['loggedIn'], 'an account created without a password has no known password')
-
-    user = pc.json('account', '--email', 'user@example.localhost', stdin='')
-    check(not user['created'], 'account without a password finds the existing account')
-    login = r.json('login', '--email', 'user@example.localhost', '--password-stdin', stdin='synthetic user password\n')
-    check(login['email'] == 'user@example.localhost', 'account without a password keeps the existing password')
-    r.json('logout')
-
-    issued = pc.json('login-code', '--email', 'coder@example.localhost')
-    check(issued['email'] == 'coder@example.localhost' and issued['code'] and issued['expires'], 'login-code issues a code')
+    issued = pc.json('login-code')
+    check(issued['code'] and issued['expires'], 'login-code issues a code')
     instance = json.loads((pc.project / 'templatecontext.json').read_text(encoding='utf-8'))['instance']
     login = r.json('login', '--code-stdin', stdin=issued['code'] + '\n')
-    check(login == {'url': pc.url, 'email': 'coder@example.localhost', 'instance': instance}, 'remote login redeems a code')
-    me = r.json('whoami')
-    check(me['email'] == 'coder@example.localhost' and me['id'] == coder['id'], 'the code signs in its own account')
-    check(r.json('sql', 'SELECT id, name FROM user_directory')['rows'] == [[coder['id'], 'Coder']], 'a code session reads only its own directory row')
-    check(r.json('list') == [] and r.json('search', 'rooibosquartz')['greetings'] == [],
-          'a new code-authenticated account cannot read another account greetings')
+    check(login == {'url': pc.url, 'instance': instance}, 'remote login redeems a code')
+    check(r.json('whoami')['id'] == me, 'the code signs in the project account')
+    check([g['id'] for g in r.json('search', 'rooibosquartz')['greetings']] != [], 'a code session reads the greetings')
     r.json('logout')
     reused = r.run('login', '--code-stdin', stdin=issued['code'] + '\n', expect=1)
     check('used or expired' in reused.stderr, 'a redeemed code cannot be reused')
@@ -647,26 +708,23 @@ def codes_scenario(pc, r):
     if log.exists():
         check(issued['code'] not in log.read_text(encoding='utf-8', errors='replace'), 'the server log does not contain the code')
 
-    pc.run('login-code', '--email', 'nobody@example.localhost', expect=1)
-    check(True, 'login-code refuses an unknown email')
+    pc.run('login-code', '--email', 'someone@example.localhost', expect=2)
+    check(True, 'login-code has no --email')
     for ttl in ('10', '601'):
-        pc.run('login-code', '--email', 'coder@example.localhost', '--ttl', ttl, expect=2)
+        pc.run('login-code', '--ttl', ttl, expect=2)
         check(True, f'login-code refuses --ttl {ttl}')
 
-    opened = pc.json('open', '--email', 'coder@example.localhost', '--no-browser')
-    check(opened['signInLink'].startswith(pc.url + '/bundle/login#'), 'open --email prints a sign-in link')
+    pc.run('open', '--email', 'someone@example.localhost', '--no-browser', expect=2)
+    check(True, 'open has no --email')
+    opened = pc.json('open', '--no-browser')
     code = opened['signInLink'].split('#', 1)[1]
     status, body = pc.http('POST', '/api/bundle/redeem', {'code': code})
-    check(status == 200 and json.loads(body)['record']['email'] == 'coder@example.localhost', 'open --email signs in that account')
+    check(status == 200 and json.loads(body)['record']['id'] == me, 'the open link signs in the project account')
     status, _ = pc.http('POST', '/api/bundle/redeem', {'code': code})
-    check(status == 401, 'the open --email link is single-use')
+    check(status == 401, 'the open link is single-use')
 
-    refused = r.run('login-code', '--email', 'coder@example.localhost', expect=2)
-    check('not available with --url' in refused.stderr, 'login-code is refused in remote mode')
-    r.run('open', '--email', 'coder@example.localhost', '--no-browser', expect=2)
-    check(True, 'open --email is refused in remote mode')
-    r.run('login', '--code-stdin', '--email', 'coder@example.localhost', stdin=issued['code'] + '\n', expect=2)
-    check(True, 'login refuses --code-stdin with --email')
+    r.run('login', '--code-stdin', '--password-stdin', stdin=issued['code'] + '\n', expect=2)
+    check(True, 'login refuses --code-stdin with --password-stdin')
 
     remaining = 31 - (time.monotonic() - expiring_at)
     if remaining > 0:

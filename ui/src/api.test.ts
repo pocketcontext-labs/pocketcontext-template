@@ -40,7 +40,7 @@ describe("SQL reads", () => {
     expect((await listGreetings()).map(g => g.id)).toEqual(["greeting0000002", "greeting0000001"]);
     expect(send).toHaveBeenCalledWith("/api/context/query", {
       method: "POST",
-      body: { sql: "SELECT id, message, created FROM greetings WHERE owner='user00000000001' ORDER BY created DESC, id DESC LIMIT 100" },
+      body: { sql: "SELECT id, message, created FROM greetings ORDER BY created DESC, id DESC LIMIT 100" },
     });
   });
   it("refuses malformed rows and anonymous reads", async () => {
@@ -107,7 +107,7 @@ describe("full-text search", () => {
     const page = await searchGreetings(" hello ");
     expect(send.mock.calls[0]).toEqual(["/api/context/search", { method: "POST", body: { index: "greetings", query: "hello", offset: 0, limit: 20 } }]);
     expect(send.mock.calls[1][1]?.body.sql).toBe(
-      "SELECT id, message, created FROM greetings WHERE owner='user00000000001' AND id IN ('greeting0000002','greeting0000001') ORDER BY id LIMIT 20",
+      "SELECT id, message, created FROM greetings WHERE id IN ('greeting0000002','greeting0000001') ORDER BY id LIMIT 20",
     );
     expect(page).toMatchObject({ generation, hasMore: true });
     expect(page.hits.map(hit => [hit.id, hit.excerpt])).toEqual([["greeting0000002", "hello there"], ["greeting0000001", "hello"]]);

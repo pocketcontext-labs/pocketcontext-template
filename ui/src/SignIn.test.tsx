@@ -8,22 +8,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("signs in with email and password", async () => {
+it("signs in with the password alone", async () => {
   const login = vi.spyOn(api, "loginPassword").mockResolvedValue();
   render(<SignIn />);
   expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
   expect(screen.getByText("TemplateContext")).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "dev@example.localhost" } });
+  expect(screen.queryByLabelText("Email")).toBeNull();
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "synthetic-password" } });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-  await waitFor(() => expect(login).toHaveBeenCalledWith("dev@example.localhost", "synthetic-password"));
+  await waitFor(() => expect(login).toHaveBeenCalledWith("synthetic-password"));
   expect(screen.getByText(/templatecontext open/)).toBeInTheDocument();
 });
 
 it("shows a failed sign-in as an alert and re-enables the form", async () => {
   vi.spyOn(api, "loginPassword").mockRejectedValue(new Error("Failed to authenticate."));
   render(<SignIn />);
-  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "dev@example.localhost" } });
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong" } });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Failed to authenticate.");

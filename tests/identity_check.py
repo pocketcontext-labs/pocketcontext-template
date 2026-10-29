@@ -58,7 +58,7 @@ ALLOWED_BINARY = [
 
 # Files and folders the template must contain with its identity, so that the
 # inverted check proves the scanner still sees what a derived product renames.
-TEMPLATE_PATHS = ['cmd/' + TEMPLATE_ID, 'skills/' + TEMPLATE_ID, 'pb_migrations/1800000100_' + TEMPLATE_COLLECTION + 's.js']
+TEMPLATE_PATHS = ['cmd/' + TEMPLATE_ID, 'skills/' + TEMPLATE_ID, 'pb_migrations/1810000100_' + TEMPLATE_COLLECTION + 's.js']
 
 SKIPPED_DIRS = {'.git', 'node_modules', 'bin', 'dist'}
 TOKEN = re.compile(rb'[A-Za-z0-9_./:@#+-]*')

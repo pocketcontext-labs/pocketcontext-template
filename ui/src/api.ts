@@ -5,7 +5,7 @@ import PocketBase, {
   type SendOptions,
 } from "pocketbase";
 
-/** A greeting as the reader shows it. Only the signed-in owner can read it. */
+/** A greeting as the reader shows it. Reading it requires the project's account. */
 export interface Greeting {
   id: string;
   message: string;
@@ -24,6 +24,12 @@ export interface SearchPage {
 // The SDK synchronizes this application's credentials across same-origin tabs.
 // The single-use sign-in page (/bundle/login) writes the same key.
 export const sessionKey = "templatecontext.reader.auth";
+/**
+ * The sign-in identity of the project's one account (bundle.AccountEmail in
+ * internal/bundle/local.go). Nobody types or sees it: the reader asks only for
+ * the password.
+ */
+export const ACCOUNT_EMAIL = "account@local.invalid";
 function browserAuthStore(): BaseAuthStore {
   try {
     const probe = `${sessionKey}.probe.${Math.random()}`;
@@ -126,7 +132,7 @@ interface SQLResult {
   rows: unknown[][];
   truncated: boolean;
 }
-/** Authenticated read-only SQL over the requester's filtered snapshot. */
+/** Authenticated read-only SQL over the server's readable tables and columns. */
 export async function query<T>(sql: string): Promise<T[]> {
   const generation = sessionGeneration;
   try {
@@ -149,11 +155,9 @@ export async function query<T>(sql: string): Promise<T[]> {
   }
 }
 
-function account(): string {
-  const id = pb.authStore.record?.id;
-  if (!pb.authStore.isValid || !id)
+function requireSession(): void {
+  if (!pb.authStore.isValid || !pb.authStore.record?.id)
     throw new Error("Please sign in to continue");
-  return identity(id);
 }
 function greeting(row: Partial<Greeting>): Greeting {
   if (
@@ -166,14 +170,13 @@ function greeting(row: Partial<Greeting>): Greeting {
 }
 
 export const LIST_LIMIT = 100;
-/** The signed-in account's own greetings, newest first. */
+/** The greetings, newest first. */
 export async function listGreetings(limit = LIST_LIMIT): Promise<Greeting[]> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200)
     throw new Error("Invalid list size");
-  // The snapshot filter already hides other owners; the explicit owner keeps the
-  // intent visible and the query correct if the filter is ever loosened.
+  requireSession();
   const rows = await query<Greeting>(
-    `SELECT id, message, created FROM greetings WHERE owner=${account()} ORDER BY created DESC, id DESC LIMIT ${limit}`,
+    `SELECT id, message, created FROM greetings ORDER BY created DESC, id DESC LIMIT ${limit}`,
   );
   return rows.map(greeting);
 }
@@ -186,16 +189,16 @@ export function validMessage(message: string): string {
     throw new Error(`A greeting has at most ${MESSAGE_LIMIT} characters`);
   return trimmed;
 }
-/** Create a greeting. The server sets its owner to the requester. */
+/** Create a greeting. */
 export async function addGreeting(message: string): Promise<Greeting> {
-  account();
+  requireSession();
   const record = await pb
     .collection("greetings")
     .create<Greeting>({ message: validMessage(message) });
   return greeting(record);
 }
 
-/** Notify on any change to the requester's greetings. Returns an unsubscribe. */
+/** Notify on any change to the greetings. Returns an unsubscribe. */
 export async function watchGreetings(notify: () => void): Promise<() => void> {
   const generation = sessionGeneration;
   const unsubscribe = await pb.collection("greetings").subscribe("*", () => {
@@ -234,9 +237,9 @@ export function validSearch(term: string): string {
   return trimmed;
 }
 /**
- * Full-text search over the requester's own greetings through the vendored
- * search endpoint. The private index has no scope; paging past the first page
- * pins the generation so results stay consistent.
+ * Full-text search over the greetings through the vendored search endpoint.
+ * The index has no scope; paging past the first page pins the generation so
+ * results stay consistent.
  */
 export async function searchGreetings(
   term: string,
@@ -255,7 +258,7 @@ export async function searchGreetings(
   )
     throw new Error("Invalid search page");
   const text = validSearch(term);
-  account();
+  requireSession();
   const session = sessionGeneration;
   const active = () => {
     if (session !== sessionGeneration || !pb.authStore.isValid)
@@ -329,7 +332,7 @@ export async function searchGreetings(
   const ids = result.hits.map((hit) => identity(hit.id)).join(",");
   const rows = (
     await query<Greeting>(
-      `SELECT id, message, created FROM greetings WHERE owner=${account()} AND id IN (${ids}) ORDER BY id LIMIT ${limit}`,
+      `SELECT id, message, created FROM greetings WHERE id IN (${ids}) ORDER BY id LIMIT ${limit}`,
     )
   ).map(greeting);
   active();
@@ -403,12 +406,10 @@ async function signIn(
 export function cancelLogin(): void {
   pendingSignIn?.cancel();
 }
-export async function loginPassword(
-  email: string,
-  password: string,
-): Promise<void> {
+/** Sign in to the project's one account with its password. */
+export async function loginPassword(password: string): Promise<void> {
   await signIn((client) =>
-    client.collection("users").authWithPassword(email, password),
+    client.collection("users").authWithPassword(ACCOUNT_EMAIL, password),
   );
 }
 /** Normalize a one-time code from `templatecontext login-code` or an `open` link. */

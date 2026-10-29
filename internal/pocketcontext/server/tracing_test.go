@@ -76,19 +76,19 @@ func TestTracingAuthenticatedRequest(t *testing.T) {
 	}
 }
 
-func TestTracingSnapshotAndRESTPrivacy(t *testing.T) {
-	app, cfg, tokens, _ := snapshotFixture(t)
+func TestTracingSQLAndRESTPrivacy(t *testing.T) {
+	app, token, _ := fixture(t)
 	path := filepath.Join(t.TempDir(), "traces.jsonl")
-	cfg.Tracing = tracing.Config{Enabled: true, Path: path, Service: "private-app"}
+	cfg := Config{AuthCollection: "agents", Tables: map[string][]string{"deals": {"id", "title"}}, TimeoutMS: 1000, MaxRows: 100, MaxBytes: 4096, Tracing: tracing.Config{Enabled: true, Path: path, Service: "private-app"}}
 	h, err := startConfiguredRouter(t, app, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := request(h, "POST", "/api/context/query", tokens["alice"], `{"sql":"SELECT name FROM compensation"}`)
+	response := request(h, "POST", "/api/context/query", token, `{"sql":"SELECT title FROM deals"}`)
 	if response.Code != 200 {
 		t.Fatal(response.Body.String())
 	}
-	rest := request(h, "POST", "/api/collections/deals/records", tokens["alice"], `{"title":"private-body-value"}`)
+	rest := request(h, "POST", "/api/collections/deals/records", token, `{"title":"private-body-value"}`)
 	if rest.Code != 200 {
 		t.Fatal(rest.Body.String())
 	}
@@ -101,7 +101,7 @@ func TestTracingSnapshotAndRESTPrivacy(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if strings.Contains(string(data), "private-body-value") || strings.Contains(string(data), "SELECT name") || strings.Contains(string(data), tokens["alice"]) {
+	if strings.Contains(string(data), "private-body-value") || strings.Contains(string(data), "SELECT title") || strings.Contains(string(data), token) {
 		t.Fatal("captured private payload")
 	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
@@ -119,7 +119,7 @@ func TestTracingSnapshotAndRESTPrivacy(t *testing.T) {
 			t.Fatal(span)
 		}
 	}
-	for _, name := range []string{"snapshot.wait", "snapshot.build", "snapshot.reader_init", "sql.prepare", "sql.execute", "sql.scan", "response.encode", "auth"} {
+	for _, name := range []string{"sql.prepare", "sql.execute", "sql.scan", "response.encode", "auth"} {
 		if !names[name] {
 			t.Fatalf("missing phase %s", name)
 		}

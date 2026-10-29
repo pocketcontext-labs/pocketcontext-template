@@ -138,6 +138,15 @@ func Serve(p *Project, opts ServeOptions) error {
 	if err := store.Open(); err != nil {
 		return err
 	}
+	// Refuse a database from another release before PocketBase opens it, so
+	// no migration runs and nothing is written back.
+	if _, err := os.Stat(store.livePath()); err == nil {
+		if err := checkDatabase(store.livePath(), p.DB); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	appDir, err := unpack(p)
 	if err != nil {
 		return fmt.Errorf("unpacking application files: %w", err)
@@ -212,7 +221,7 @@ func Serve(p *Project, opts ServeOptions) error {
 	stop := make(chan struct{}, 1)
 	local := &localRoutes{p: p, store: store, key: key, stop: stop, uiDev: opts.UIDev}
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
-		e.InstallerFunc = nil // accounts are created by `templatecontext init`
+		e.InstallerFunc = nil // the one account is created by `templatecontext init`
 		httpServer = e.Server
 		if migrations() != before {
 			store.Changed()

@@ -22,6 +22,11 @@ import (
 // KeyHeader carries the private local key to the local-only routes.
 const KeyHeader = "X-TemplateContext-Local-Key"
 
+// AccountEmail is the sign-in identity of the project's one account. PocketBase
+// password sign-in needs an email; nobody chooses or sees this one, and the
+// reserved .invalid domain never receives mail. The reader uses the same value.
+const AccountEmail = "account@local.invalid"
+
 type localRoutes struct {
 	p     *Project
 	store *Store
@@ -113,17 +118,14 @@ func (l *localRoutes) requireKey(e *core.RequestEvent) error {
 	return nil
 }
 
-// account returns the configured account, or the only enabled one.
-func (l *localRoutes) account(app core.App) (*core.Record, error) {
-	if l.p.Config.Email != "" {
-		return app.FindAuthRecordByEmail("users", l.p.Config.Email)
-	}
-	records, err := app.FindRecordsByFilter("users", "disabled = false", "created", 2, 0)
+// account returns the project's one account.
+func account(app core.App) (*core.Record, error) {
+	records, err := app.FindRecordsByFilter("users", "id != ''", "created", 2, 0)
 	if err != nil {
 		return nil, err
 	}
 	if len(records) != 1 {
-		return nil, apis.NewBadRequestError("Set the account email in templatecontext.json.", nil)
+		return nil, apis.NewBadRequestError("No local account; run `templatecontext init`.", nil)
 	}
 	return records[0], nil
 }
@@ -156,55 +158,67 @@ func (l *localRoutes) register(e *core.ServeEvent) {
 		if err := l.requireKey(re); err != nil {
 			return err
 		}
-		user, err := l.account(re.App)
+		user, err := account(re.App)
 		if err != nil {
 			return re.BadRequestError("No local account; run `templatecontext init`.", nil)
 		}
 		return apis.RecordAuthResponse(re, user, "local", nil)
 	})
 
+	password := func(re *core.RequestEvent) (string, error) {
+		var body struct {
+			Password string `json:"password"`
+		}
+		if err := re.BindBody(&body); err != nil {
+			return "", re.BadRequestError("Invalid request.", nil)
+		}
+		if len(body.Password) < 8 {
+			return "", re.BadRequestError("The password needs at least 8 characters.", nil)
+		}
+		return body.Password, nil
+	}
+
+	// Creates the project's one account. pb_hooks/account_access.js refuses a
+	// second one, so this route does not check first.
 	e.Router.POST("/api/bundle/account", func(re *core.RequestEvent) error {
 		if err := l.requireKey(re); err != nil {
 			return err
 		}
-		var body struct {
-			Email    string `json:"email"`
-			Name     string `json:"name"`
-			Password string `json:"password"`
+		secret, err := password(re)
+		if err != nil {
+			return err
 		}
-		if err := re.BindBody(&body); err != nil {
-			return re.BadRequestError("Invalid account.", nil)
+		users, err := re.App.FindCollectionByNameOrId("users")
+		if err != nil {
+			return err
 		}
-		if body.Password != "" && len(body.Password) < 8 {
-			return re.BadRequestError("The password needs at least 8 characters.", nil)
-		}
-		user, err := re.App.FindAuthRecordByEmail("users", body.Email)
-		created := err != nil
-		if created {
-			if body.Password == "" {
-				// Sign-in happens with one-time codes; nobody learns this password.
-				body.Password = RandomHex(32)
-			}
-			users, err := re.App.FindCollectionByNameOrId("users")
-			if err != nil {
-				return err
-			}
-			user = core.NewRecord(users)
-			user.SetEmail(body.Email)
-			user.SetVerified(true)
-			name := strings.TrimSpace(body.Name)
-			if name == "" {
-				name = strings.Split(body.Email, "@")[0]
-			}
-			user.Set("name", name)
-		}
-		if body.Password != "" {
-			user.SetPassword(body.Password)
-		}
+		user := core.NewRecord(users)
+		user.SetEmail(AccountEmail)
+		user.SetVerified(true)
+		user.SetPassword(secret)
 		if err := re.App.Save(user); err != nil {
-			return re.BadRequestError("Could not save the account: "+err.Error(), nil)
+			return re.BadRequestError("Could not create the account: "+err.Error(), nil)
 		}
-		return re.JSON(http.StatusOK, map[string]any{"id": user.Id, "email": user.Email(), "created": created})
+		return re.JSON(http.StatusOK, map[string]any{"created": true})
+	})
+
+	e.Router.POST("/api/bundle/password", func(re *core.RequestEvent) error {
+		if err := l.requireKey(re); err != nil {
+			return err
+		}
+		secret, err := password(re)
+		if err != nil {
+			return err
+		}
+		user, err := account(re.App)
+		if err != nil {
+			return err
+		}
+		user.SetPassword(secret)
+		if err := re.App.Save(user); err != nil {
+			return re.BadRequestError("Could not change the password: "+err.Error(), nil)
+		}
+		return re.JSON(http.StatusOK, map[string]any{"password": "changed"})
 	})
 
 	e.Router.POST("/api/bundle/login-code", func(re *core.RequestEvent) error {
@@ -212,8 +226,7 @@ func (l *localRoutes) register(e *core.ServeEvent) {
 			return err
 		}
 		var body struct {
-			Email string `json:"email"`
-			TTL   *int   `json:"ttl"`
+			TTL *int `json:"ttl"`
 		}
 		if re.Request.ContentLength != 0 {
 			if err := re.BindBody(&body); err != nil {
@@ -227,21 +240,14 @@ func (l *localRoutes) register(e *core.ServeEvent) {
 		if !ValidCodeTTL(ttl) {
 			return re.BadRequestError(fmt.Sprintf("ttl must be %d-%d seconds.", MinCodeTTL, MaxCodeTTL), nil)
 		}
-		var user *core.Record
-		var err error
-		if email := strings.TrimSpace(body.Email); email != "" {
-			user, err = re.App.FindAuthRecordByEmail("users", strings.ToLower(email))
-			if err != nil || user.GetBool("disabled") {
-				return re.BadRequestError("No active account with that email; create it with `templatecontext account`.", nil)
-			}
-		} else if user, err = l.account(re.App); err != nil {
+		user, err := account(re.App)
+		if err != nil {
 			return re.BadRequestError("No local account; run `templatecontext init`.", nil)
 		}
 		code, expires := l.codes.issue(user.Id, time.Duration(ttl)*time.Second)
 		return re.JSON(http.StatusOK, map[string]string{
 			"url":     l.p.URL() + "/bundle/login#" + code,
 			"code":    code,
-			"email":   user.Email(),
 			"expires": expires.UTC().Format(time.RFC3339),
 		})
 	})
@@ -260,9 +266,6 @@ func (l *localRoutes) register(e *core.ServeEvent) {
 		user, err := re.App.FindRecordById("users", id)
 		if err != nil {
 			return re.UnauthorizedError("This sign-in code is used or expired: the account no longer exists.", nil)
-		}
-		if user.GetBool("disabled") {
-			return re.ForbiddenError("This account is disabled.", nil)
 		}
 		return apis.RecordAuthResponse(re, user, "local", nil)
 	})

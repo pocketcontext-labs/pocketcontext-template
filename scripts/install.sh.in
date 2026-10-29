@@ -144,7 +144,7 @@ templatecontext_install() (
     mv -f "$pc_stage" "$pc_destination" || templatecontext_fail 'could not replace executable'
     pc_stage=
     printf 'Installed TemplateContext %s at %s\n' "$pc_version" "$pc_destination"
-    printf 'Next: "%s" init --email you@example.localhost   (the database templatecontext.db is created beside the binary)\n' "$pc_destination"
+    printf 'Next: "%s" init   (asks for the reader password; the database templatecontext.db is created beside the binary)\n' "$pc_destination"
 )
 
 templatecontext_install "$@"

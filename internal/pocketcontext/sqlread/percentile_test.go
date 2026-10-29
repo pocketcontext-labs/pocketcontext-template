@@ -92,27 +92,6 @@ func TestPercentileConcurrentCancellation(t *testing.T) {
 	}
 }
 
-func TestPercentileSnapshotVisibility(t *testing.T) {
-	_, path, cfg, sc := snapshotFixture(t)
-	s := newTestSnapshot(t, path, cfg, sc)
-	for _, tc := range []struct {
-		requester string
-		want      float64
-	}{{"alice", 150}, {"bob", 900}} {
-		r, _, err := s.Query(context.Background(), tc.requester, `SELECT median(salary),percentile(salary,50),percentile_cont(salary,0.5) FROM pay`)
-		if err != nil || !reflect.DeepEqual(r.Rows, [][]any{{tc.want, tc.want, tc.want}}) {
-			t.Fatalf("%s: %#v, %v", tc.requester, r, err)
-		}
-		cleanSnapshot(t, s)
-	}
-	for _, query := range []string{`SELECT median(secret) FROM pay`, `SELECT percentile(length(employee),50) FROM managers`} {
-		if _, _, err := s.Query(context.Background(), "alice", query); err == nil {
-			t.Fatalf("unauthorized query succeeded: %s", query)
-		}
-		cleanSnapshot(t, s)
-	}
-}
-
 func TestPercentileHeapLimit(t *testing.T) {
 	// SQLite's heap limit is process-wide and can only be lowered. Exercise
 	// allocation failure in a subprocess so other tests retain the normal cap.
