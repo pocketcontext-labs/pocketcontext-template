@@ -1,7 +1,7 @@
 # Installs a fixed TemplateContext release on Windows.
 # Usage: irm https://github.com/pocketcontext-labs/pocketcontext-template/releases/download/v@VERSION@/install.ps1 | iex
-# Target folder: $env:TEMPLATECONTEXT_INSTALL_DIR, for example inside OneDrive, iCloud
-# Drive, Dropbox or Google Drive; default %LOCALAPPDATA%\Programs\TemplateContext.
+# Target folder (required): $env:TEMPLATECONTEXT_INSTALL_DIR, the project folder beside
+# templatecontext.db, for example inside OneDrive, iCloud Drive, Dropbox or Google Drive.
 & {
     $ErrorActionPreference = 'Stop'
     Set-StrictMode -Version 3
@@ -13,7 +13,7 @@
     # Windows on ARM runs the amd64 build through emulation.
     if ($arch -notin @('AMD64', 'ARM64')) { throw "templatecontext: unsupported architecture $arch" }
     $dir = $env:TEMPLATECONTEXT_INSTALL_DIR
-    if (-not $dir) { $dir = Join-Path $env:LOCALAPPDATA 'Programs\TemplateContext' }
+    if (-not $dir) { throw 'templatecontext: set $env:TEMPLATECONTEXT_INSTALL_DIR to the installation directory (the project folder)' }
     if (-not [System.IO.Path]::IsPathRooted($dir)) { throw 'templatecontext: the installation directory must be an absolute path' }
     $archive = "templatecontext_${version}_windows_amd64.zip"
     $base = "https://github.com/pocketcontext-labs/pocketcontext-template/releases/download/v$version"

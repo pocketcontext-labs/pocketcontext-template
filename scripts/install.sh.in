@@ -21,7 +21,7 @@ templatecontext_install() (
     # the installer before the shell has received its complete function body.
     set -f
     umask 077
-    [ "$#" -le 1 ] || templatecontext_fail 'usage: install.sh [DIRECTORY]'
+    [ "$#" -le 1 ] || templatecontext_fail 'usage: install.sh DIRECTORY'
     pc_requested_dir=${1:-}
     pc_version='@VERSION@'
     case "$pc_version" in
@@ -63,9 +63,11 @@ templatecontext_install() (
         esac
         [ "$pc_macos_major" -ge 15 ] || templatecontext_fail 'macOS 15 or newer is required'
     fi
-    # The binary may live in a cloud-synced project folder (iCloud Drive,
-    # OneDrive, Dropbox, Google Drive) beside templatecontext.db.
-    pc_bindir=${pc_requested_dir:-${TEMPLATECONTEXT_INSTALL_DIR:-$HOME/.local/bin}}
+    # The binary belongs in the project folder beside templatecontext.db, which may
+    # be cloud-synced (iCloud Drive, OneDrive, Dropbox, Google Drive). There is no
+    # default folder: the caller names it.
+    pc_bindir=${pc_requested_dir:-${TEMPLATECONTEXT_INSTALL_DIR:-}}
+    [ -n "$pc_bindir" ] || templatecontext_fail 'name the installation directory (the project folder): install.sh DIRECTORY or TEMPLATECONTEXT_INSTALL_DIR=DIRECTORY'
     case "$pc_bindir" in
         /*) ;;
         *) templatecontext_fail 'the installation directory must be an absolute path' ;;

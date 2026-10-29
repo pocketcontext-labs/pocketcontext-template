@@ -527,10 +527,10 @@ def publish(args):
         body = (f"TemplateContext {release_version}: a local application: server, reader and CLI in one binary.\n\n"
                 "Linux amd64 and arm64: static musl binaries. macOS arm64: macOS 15 or later, ad hoc signed. "
                 "Windows amd64: statically linked MinGW build, unsigned.\n\n"
-                f"Install on Linux or macOS: `curl -fsSL {base}/install.sh | sh`\n\n"
-                f"Install on Windows (PowerShell): `irm {base}/install.ps1 | iex`\n\n"
-                "Both installers accept a target folder (for example inside iCloud Drive, OneDrive, Dropbox or Google Drive): "
-                "`TEMPLATECONTEXT_INSTALL_DIR=...` or `$env:TEMPLATECONTEXT_INSTALL_DIR=...`.\n\n"
+                f"Install on Linux or macOS into the project folder: `curl -fsSL {base}/install.sh | sh -s -- /absolute/project/folder`\n\n"
+                f"Install on Windows (PowerShell): `$env:TEMPLATECONTEXT_INSTALL_DIR = 'C:\\absolute\\project\\folder'; irm {base}/install.ps1 | iex`\n\n"
+                "Both installers require the target folder, usually the project folder beside templatecontext.db "
+                "(it may be inside iCloud Drive, OneDrive, Dropbox or Google Drive).\n\n"
                 f"See the [README](https://github.com/{REPOSITORY}/blob/{tag}/README.md).\n\n{marker}")
         notes = ROOT / "docs" / "releases" / f"{release_version}.md"
         if notes.is_file():

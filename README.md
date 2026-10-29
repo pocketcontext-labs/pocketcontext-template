@@ -170,7 +170,7 @@ $env:TEMPLATECONTEXT_INSTALL_DIR = "$env:OneDrive\TemplateContext"
 irm https://github.com/OWNER/REPOSITORY/releases/latest/download/install.ps1 | iex
 ```
 
-Without a folder, the installers use `~/.local/bin` or `%LOCALAPPDATA%\Programs\TemplateContext`. Each verifies the archive against the release's `checksums.txt` and installs only the executable.
+The installers have no default folder: name it as the argument of `install.sh` (or `TEMPLATECONTEXT_INSTALL_DIR`) or in `TEMPLATECONTEXT_INSTALL_DIR` for `install.ps1`; the project folder beside `templatecontext.db` is recommended. Each verifies the archive against the release's `checksums.txt` and installs only the executable.
 
 ## Layout
 
