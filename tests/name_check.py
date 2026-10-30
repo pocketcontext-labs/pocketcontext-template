@@ -34,7 +34,7 @@ ALLOWED = [
 # without separators, so list the dependency's own string, not the run of
 # characters printed around the match in failures.
 ALLOWED_BINARY = [
-    # PocketBase's JS hook type definitions (github.com/pocketbase/pocketbase
+    # PocketBase's JS hook type definitions (ganigeorgiev.com/pocketbase/pocketbase
     # plugins/jsvm/internal/types/generated/types.d.ts), embedded by the jsvm
     # plugin that runs pb_hooks; copied from Go's database/sql documentation.
     (' * For usage examples, see the ' + NEEDLE + ' page at', 'PocketBase jsvm types.d.ts (database/sql docs)'),

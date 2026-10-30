@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // uiDevProxy serves only the reader through a separately managed Vite process.

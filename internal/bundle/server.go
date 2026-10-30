@@ -16,11 +16,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/apis"
-	"github.com/pocketbase/pocketbase/core"
-	_ "github.com/pocketbase/pocketbase/migrations" // system migrations
-	"github.com/pocketbase/pocketbase/plugins/jsvm"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/apis"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	_ "ganigeorgiev.com/pocketbase/pocketbase/migrations" // system migrations
+	"ganigeorgiev.com/pocketbase/pocketbase/plugins/jsvm"
 
 	assets "github.com/pocketcontext-labs/pocketcontext-template"
 	"github.com/pocketcontext-labs/pocketcontext-template/internal/pocketcontext/database"

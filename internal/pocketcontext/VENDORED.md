@@ -8,7 +8,11 @@ for import paths, which were rewritten to this module, and then updated to
 github.com/pocketcontext-labs/pocketcontext commit
 d092545083b3b8a8cfa2475fec257469e0fdd515 (direct SQL reads over the live
 database; built in-memory search indexes in the shared engine; no filtered
-snapshots, snapshot tracking or private search). The package keeps its
+snapshots, snapshot tracking or private search), and then to PocketBase
+v0.41.1 as in github.com/pocketcontext/pocketcontext commit
+279b04b821ec7cbc5c7d2f966f12e1fcfb327a0b (PocketBase's Go modules moved from
+github.com/pocketbase to ganigeorgiev.com/pocketbase; only the import paths
+changed). The package keeps its
 upstream name; do not rename it when deriving a product. For the origin of the
 application (hooks, migrations, reader, CLI) see [docs/origin.md](../../docs/origin.md).
 
