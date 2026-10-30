@@ -49,6 +49,12 @@ ALLOWED_BINARY = [
 ]
 
 TOKEN = re.compile(rb'[A-Za-z0-9_./:@#+-]*')
+# A real UTF-8 occurrence is spelled lower, title or upper case and sits in a
+# run of printable text (Go packs string constants together). Four arbitrary
+# bytes in compressed or machine code match the name case-insensitively by
+# chance in a large executable; those are not reported.
+SPELLINGS = {NEEDLE.encode(), NEEDLE.title().encode(), NEEDLE.upper().encode()}
+MIN_PRINTABLE_RUN = 8
 SKIPPED_DIRS = {'.git', 'node_modules', 'bin', 'dist'}
 
 
@@ -100,6 +106,18 @@ def scan_repository():
     return files, matches + stale
 
 
+def chance(data, start, length):
+    """Whether a UTF-8 match is arbitrary binary bytes rather than text."""
+    if data[start:start + length] not in SPELLINGS:
+        return True
+    begin, end = start, start + length
+    while begin > 0 and 32 <= data[begin - 1] < 127:
+        begin -= 1
+    while end < len(data) and 32 <= data[end] < 127:
+        end += 1
+    return end - begin < MIN_PRINTABLE_RUN
+
+
 def scan_binary(path):
     data = path.read_bytes()
     lowered = data.lower()
@@ -113,6 +131,8 @@ def scan_binary(path):
     for needle, encoding in patterns:
         for match in re.finditer(re.escape(needle), lowered):
             start = match.start()
+            if encoding == 'utf-8' and chance(data, start, len(needle)):
+                continue
             if encoding == 'utf-8':
                 begin = start
                 while begin > 0 and TOKEN.fullmatch(data[begin - 1:begin]):
