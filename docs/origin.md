@@ -16,4 +16,6 @@ The vendored server in `internal/pocketcontext/` keeps its upstream name; it com
 
 The template now builds on the shared library `github.com/pocketcontext-labs/pocketcontext-core`: the project, sync-safe database handling, lease, local routes, UI development proxy, tunnel and vendored `database`, `sqliteuri` and maintenance packages live there. Identity, policy and hooks are in `internal/appconfig`. `internal/bundle` and `internal/tunnel` are gone; references to them above describe the earlier layout.
 
+Opt-in public mode (native HTTPS on a domain and remote MCP with OAuth) uses pocketcontext-core's implementation, the one PocketContext Atlas and Crew run. The template adds the `server.json` public collection allowlist and five generic MCP tools; loopback remains the default and there is no hosted mode.
+
 A product derived from this template is a full fork. Review security fixes in PocketContext and in the vendored server and port the relevant ones by hand.

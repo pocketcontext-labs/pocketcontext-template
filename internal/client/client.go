@@ -58,7 +58,7 @@ func newClient(base string) *Client {
 func New(p *appserver.Project) (*Client, error) {
 	c := newClient(p.URL())
 	c.DB = p.DB
-	if err := appserver.EnsureRunning(p, appserver.StartOptions{TCP: true}); err != nil {
+	if err := ensureLocalTCP(p, appserver.StartOptions{TCP: true}); err != nil {
 		return nil, fail(1, "%v", err)
 	}
 	key, err := appserver.ReadKey(p)

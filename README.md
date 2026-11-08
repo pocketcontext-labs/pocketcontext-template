@@ -1,6 +1,6 @@
 # TemplateContext
 
-A template for local "*Context" applications in one binary, derived from [PocketContext](https://github.com/pocketcontext-labs/pocketcontext). It builds on the shared library [pocketcontext-core](https://github.com/pocketcontext-labs/pocketcontext-core), pinned to an exact release in `go.mod`, and keeps PocketContext's architecture — a server on PocketBase, a browser reader, a command-line client, a private tunnel to other computers and an agent skill for Claude Code, Codex and Antigravity, all in one Go executable with nothing else needed at run time — and replaces the knowledge base with a hello-world data model: the project's one account adds, lists and searches `greetings`.
+A template for local "*Context" applications in one binary, derived from [PocketContext](https://github.com/pocketcontext-labs/pocketcontext). It builds on the shared library [pocketcontext-core](https://github.com/pocketcontext-labs/pocketcontext-core), pinned to an exact release in `go.mod`, and keeps PocketContext's architecture — a server on PocketBase, a browser reader, a command-line client, a private tunnel to other computers, opt-in public HTTPS and remote MCP, and an agent skill for Claude Code, Codex and Antigravity, all in one Go executable with nothing else needed at run time — and replaces the knowledge base with a hello-world data model: the project's one account adds, lists and searches `greetings`.
 
 TemplateContext is a placeholder product. Nobody is meant to use it as it is: a new product copies the repository, renames every identity item and replaces `greetings` with its own collections.
 
@@ -22,7 +22,7 @@ TemplateContext/            ← any folder; may be in iCloud Drive, OneDrive, Dr
 
 The database defaults to `templatecontext.db` beside the binary; `--db PATH` or `TEMPLATECONTEXT_DB` selects another. While the server runs, a working copy lives in the per-machine cache (`os.UserCacheDir()/templatecontext/<key>/`) together with the log, the private local key and the tunnel identity; unpacked application files live in `os.UserCacheDir()/templatecontext/app/`. The server writes a consistent copy (`VACUUM INTO` plus an atomic rename) back to `templatecontext.db` a few seconds after changes and on `stop`, so sync clients only ever see complete files.
 
-A database is opened only by a release that ships every schema migration it has applied. Any other database, such as one created by a template release before the single-user schema (0.1.x, with per-account `greetings`), is refused on start before any migration runs and left unchanged; keep using the release that created it, or start a new project with `init --db NEW_PATH`.
+A database is opened only by a release that ships every schema migration it has applied. Any other database, such as one created by a template release before the single-user schema (0.1.x, with per-account `greetings`), is refused on start before any migration runs and left unchanged; keep using the release that created it, or start a new project with `init --db NEW_PATH`. The same rule works against downgrades: once 0.4.0 has opened a database, its `1810000200_public_password.js` migration makes 0.3.0 refuse it, so keep a copy from before the upgrade if you may need to go back.
 
 ## Quick start
 
@@ -45,7 +45,7 @@ Without `--db`, the database is `bin/templatecontext.db`. The server listens on 
 
 ## Authentication
 
-A project is single-user: it has exactly one account, created by `init`, with no name or email to choose (`users` holds one hidden record; the server refuses a second one and any deletion, and there is no account management). The reader asks only for its password. `open` signs the browser in with a single-use link valid for two minutes; `login-code` issues one-time codes for remote clients (see below). The CLI needs no password: it reads a random key that the server writes to the private cache at start and exchanges it, in the `X-TemplateContext-Local-Key` header, for an ordinary `users` token. Anyone who can read that key can already read the database. All APIs, including SQL and search, still require a token, CORS allows only the server's own origin, and requests for any other `Host` are refused, so web pages cannot reach the server through `127.0.0.1`. `/api/bundle/instance` answers `{"app": "templatecontext", ...}` so the CLI and the launcher can tell this server from another program on the port.
+A project is single-user: it has exactly one account, created by `init`, with no name or email to choose (`users` holds one hidden record; the server refuses a second one and any deletion, and there is no account management). The reader asks only for its password. `open` signs the browser in with a single-use link valid for two minutes; `login-code` issues one-time codes for remote clients (see below). The CLI needs no password: it reads a random key that the server writes to the private cache at start and exchanges it, in the `X-TemplateContext-Local-Key` header, for an ordinary `users` token. Anyone who can read that key can already read the database. All APIs, including SQL and search, still require a token, CORS allows only the server's own origin, and requests for any other `Host` are refused, so web pages cannot reach the server through `127.0.0.1`. The server listens on loopback only unless [public mode](#public-mode) is explicitly requested. `/api/bundle/instance` answers `{"app": "templatecontext", ...}` so the CLI and the launcher can tell this server from another program on the port.
 
 ## Several computers
 
@@ -80,6 +80,17 @@ The tunnel is built in: [tailcat](https://github.com/tailscale/tailcat) 0.7.0 (W
 Codes and links are single use and kept only in the server's memory, so a server restart invalidates them. A `login-code` code is valid for 10 minutes (`--ttl 30`-`600` seconds); an `open` link for 2 minutes. `login --url URL` without `--code-stdin` signs in with the reader password instead, and `password` on the agent computer changes it (which also ends existing sessions).
 
 A different local port is refused by the server's Host check. `--url` (or `TEMPLATECONTEXT_URL`; an explicit `--db` overrides it) accepts only `http://127.0.0.1:PORT` or `http://localhost:PORT`. Remote mode never resolves or creates a database, never starts a server and never reads the local key. `login` stores only the token, in `os.UserCacheDir()/templatecontext/remote-<hash>/session.json` (private), and asks for a new sign-in when it expires (7 days) or when the URL serves a different project. `logout` deletes it. Server commands (`serve`, `start`, `ensure-running`, `stop`, `flush`, `recover`, `init`, `password`, `login-code`) run on the agent computer only.
+
+## Public mode
+
+Public mode is opt-in; without `--domain` nothing listens beyond loopback. One persistent service serves the web app on a domain with a Let's Encrypt certificate, and can add a remote MCP endpoint with OAuth:
+
+```sh
+templatecontext serve --headless --domain app.example.com [--acme-email EMAIL] [--mcp]
+templatecontext open --public     # on the host: a sign-in link for the public origin; never starts a server
+```
+
+`--mcp` and `--acme-email` require `--domain`, and `--headless` and `--domain` require each other; `--domain` excludes `--tcp-only`, `--port` and `--ui-dev`, and there is no `--tunnel` option. Public start refuses unless the account password was saved with at least 12 characters, at least 5 of them different; accounts from earlier releases must run `password` first. It needs DNS pointing to the host, reachable ports 80 and 443 and one persistent service (systemd on Linux); port 80 serves only ACME validation and redirects, and no reverse proxy is used. `server.json` `"public": {"collections": ["greetings"]}` is the allowlist of what the public origin exposes: an unlisted collection is denied, auth or system collections are refused at startup, and so is any entry in `tables` that is not listed, because SQL and search read every entry in `tables`. MCP offers exactly five tools driven by `server.json`: `read`, `search`, `schema`, `query` and `write`, with no shell, filesystem or administration. The project's one account remains the only identity. `--url` accepts only loopback URLs. While a `--domain` service runs there is no loopback TCP port, so data commands, `open` without `--public`, `tunnel serve` and `--url` clients do not reach it; `status`, `stop`, `flush`, `password`, `login-code` and `open --public` do. There is no hosted mode. See [HTTPS](docs/https.md) and [MCP](docs/mcp.md). Certificate issuance comes from pocketcontext-core; it has not been exercised with a real certificate for this template.
 
 ## Data model
 
@@ -134,7 +145,7 @@ The browser checks use synthetic data. Install their pinned Chromium once with `
 | `(cd ui && pnpm typecheck && pnpm test)` | reader types and unit tests (Vitest) |
 | `make names` | `tests/name_check.py`: the retired product name appears nowhere in the repository or binary |
 | `make identity` | `tests/identity_check.py`: no template identity left in a derived product (inverted in the template) |
-| `make e2e` | `tests/public_routes.py` (the frozen anonymous route table, foreign-Host refusal, loopback-only listening, no public listener option) and `tests/e2e.py`: init, CLI, the single account and authentication on every API, SQL policy, search, skill, lease, conflict and recover, refusal of other releases' databases, remote mode, tunnel and login codes, in a temporary folder |
+| `make e2e` | `tests/public_routes.py` (on a loopback server: the frozen anonymous route table, foreign-Host refusal and loopback-only listening without `--domain`; refusal of `--hosted`, of invalid public mode options and of `open --public`, and of public start with a weak password; the routes of a running public origin are tested in Go, in `internal/appconfig/public_test.go` and `internal/client/mcp_test.go`) and `tests/e2e.py`: init, CLI, the single account and authentication on every API, SQL policy, search, skill, lease, conflict and recover, refusal of other releases' databases, remote mode, tunnel and login codes, in a temporary folder |
 | `node tests/reader_ui_browser.mjs` | the embedded reader in Chromium |
 | `node tests/ui_dev_browser.mjs` | hot reload through `serve --ui-dev`, and a same-port loopback forward |
 | `make windows` | the Windows cross-compile |
@@ -165,16 +176,17 @@ The installers have no default folder: name it as the argument of `install.sh` (
 | Path | Content |
 | --- | --- |
 | `cmd/templatecontext` | entry point |
-| `internal/appconfig` | the application's `Identity`, public route policy (deny all), maintenance reads, copy and hooks on pocketcontext-core |
+| `internal/appconfig` | the application's `Identity`, public route policy (deny by default, public collections from `server.json`), maintenance reads, copy and hooks on pocketcontext-core |
 | `internal/buildinfo` | version and commit stamped at build time |
 | `internal/client` | CLI commands, greetings, remote mode, skill installation, help |
 | `internal/pocketcontext` | vendored PocketContext server (SQL reads, search, tracing); see `VENDORED.md`. The project, sync-safe database handling, local routes, tunnel and UI development proxy live in [pocketcontext-core](https://github.com/pocketcontext-labs/pocketcontext-core) |
 | `pb_hooks`, `pb_migrations` | schema and server-side rules |
-| `server.json` | SQL column allowlist and search index configuration |
+| `server.json` | SQL column allowlist, search index configuration and the public collection allowlist |
 | `ui` | browser reader (React 19, Vite) |
 | `embed.go` | embeds `pb_hooks`, `pb_migrations`, `server.json`, `ui/dist` and `skills/templatecontext` |
 | `skills/templatecontext` | skill template (`SKILL.remote.md` for `skill --url`); `templatecontext skill` fills in absolute paths |
 | `scripts` | `dev.mjs` launcher, `release.py`, installer templates, `zig-cc` wrapper, license notices |
 | `tests` | `e2e.py`, `public_routes.py` and `testdata/public_routes.json`, `name_check.py`, `identity_check.py`, `test_release.py`, `dev_launcher.test.mjs`, browser checks |
+| `docs` | data model, origin, [HTTPS](docs/https.md) and [MCP](docs/mcp.md) manuals, release notes |
 | `prompts/new-product.md` | the prompt that turns this template into a product |
 | `template.json` | marks the template and lists its identity; deleted in a derived product |

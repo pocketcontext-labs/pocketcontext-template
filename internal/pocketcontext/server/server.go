@@ -30,6 +30,9 @@ type Config struct {
 	MaxRows        int                 `json:"maxRows"`
 	MaxBytes       int                 `json:"maxBytes"`
 	Search         *searchread.Config  `json:"search,omitempty"`
+	// Public is read by internal/appconfig (the public mode allowlist); this
+	// server only has to accept the key.
+	Public json.RawMessage `json:"public,omitempty"`
 }
 
 // validateSearchConfig validates index shapes and requires every column a

@@ -5,6 +5,7 @@
 package appconfig
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -44,26 +45,25 @@ var Identity = appidentity.Identity{
 	HookGlobal:        "$templatecontext",
 }
 
-// Text is the copy shown to people. The OAuth, OTP and budget strings are
-// required by core but unreachable: this application starts no public listener.
+// Text is the copy shown to people. The OAuth consent text is shown by public
+// mode with --mcp; hosted mode (email sign-in, budgets) is not offered here.
 var Text = appserver.Text{
 	AccountName:        "TemplateContext",
 	LegacyRecreateHint: "Use the release that created it, or start a new project with `templatecontext init --db NEW_PATH`",
 	OAuthResourceName:  "TemplateContext",
 	OAuthConsent: appserver.OAuthConsentText{
-		ConnectionsHTML: `<p>This application has no remote access.</p>`,
-		RequestHTML:     `<p><strong>{{.Name}}</strong> is asking for access, which this application does not grant.</p>`,
+		ConnectionsHTML: `<p>These apps can read, search, query and change this application's records through its MCP tools. Revoke access to disconnect an app.</p>`,
+		RequestHTML:     `<p><strong>{{.Name}}</strong> is asking to read, search, query and change (including delete) this application's records.</p><p>This does not grant server administration, shell or file access.</p>`,
 	},
 	BudgetExhausted: "Request budget exhausted. Retry after the indicated delay.",
 	OTPSubject:      "Log in to TemplateContext",
 	OTPSenderName:   "TemplateContext",
 }
 
-// PublicRoute is the public route allowlist: empty. This application listens on
-// loopback only and has no command that starts a public listener. Core's fixed
-// checks run first; denying here makes the allowlist explicit if that changes.
-func PublicRoute(core.App) func(method, path string) bool {
-	return func(string, string) bool { return false }
+// Observe lists the diagnostic labels of the MCP tools and the routes they call.
+var Observe = mcpobserve.Policy{
+	Tools:     strings.Fields("read search schema query write"),
+	APIRoutes: strings.Fields("/api/context/schema /api/context/query /api/context/search /api/collections/{collection}/records /api/collections/{collection}/records/{id}"),
 }
 
 // Policy returns the public routes, maintenance reads and observability lists.
@@ -74,18 +74,32 @@ func Policy() appserver.Policy {
 			ReadPosts: map[string]bool{"/api/context/query": true, "/api/context/search": true, "/api/files/token": true},
 			ReadGets:  map[string]bool{"/api/context/schema": true},
 		},
-		Observe: mcpobserve.Policy{
-			Tools:     strings.Fields(""),
-			APIRoutes: strings.Fields("/api/context/schema /api/context/query /api/context/search /api/collections/{collection}/records /api/collections/{collection}/records/{id}"),
-		},
+		Observe: Observe,
 	}
 }
 
 // Hooks returns the product code at each point the server diverges.
 func Hooks() appserver.Hooks {
 	return appserver.Hooks{
+		PreRegister: func(app core.App, _ *appserver.Project, opts appserver.ServeOptions) error {
+			if opts.HTTPSDomain == "" {
+				return nil
+			}
+			cfg, err := LoadPublicConfig()
+			if err != nil {
+				return fmt.Errorf("public mode refused: %w", err)
+			}
+			app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+				if err := checkPublicReady(e.App, cfg); err != nil {
+					return fmt.Errorf("public mode refused: %w", err)
+				}
+				return e.Next()
+			})
+			return nil
+		},
 		Register: func(app core.App, ctx appserver.RegisterContext) error {
 			server.RegisterDatabase(app, filepath.Join(ctx.AppDir, "server.json"), ctx.LivePath)
+			bindPublicGuards(app)
 			return nil
 		},
 	}

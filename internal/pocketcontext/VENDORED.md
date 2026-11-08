@@ -20,6 +20,9 @@ application (hooks, migrations, reader, CLI) see [docs/origin.md](../../docs/ori
 
 Local changes (inherited from pocketcontext-labs/pocketcontext unless noted):
 
+- `server.Config` (this template only): accepts the `public` key of `server.json`,
+  which `internal/appconfig` reads for public mode.
+
 - `database/` and `tracing/`: platform files. Windows has no `O_NOFOLLOW`, and
   its mode bits cannot prove that a file is private.
 - `server.RegisterDatabase`: reads SQL from an explicit database path, because

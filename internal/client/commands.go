@@ -190,12 +190,12 @@ parsed:
 		return nil
 	}
 	spec := map[string][2][]string{
-		"serve":          {{"ui-dev"}, {"take-over", "tcp-only"}},
+		"serve":          {{"ui-dev", "port", "domain", "acme-email"}, {"take-over", "tcp-only", "headless", "mcp"}},
 		"start":          {nil, {"take-over"}},
 		"ensure-running": {nil, {"take-over"}},
 		"stop":           {nil, nil},
 		"status":         {nil, nil},
-		"open":           {nil, {"no-browser"}},
+		"open":           {nil, {"no-browser", "public"}},
 		"flush":          {nil, nil},
 		"recover":        {{"keep"}, nil},
 		"init":           {{"port"}, {"password-stdin"}},
@@ -254,11 +254,22 @@ parsed:
 		if a.has("ui-dev") && a.flags["ui-dev"] == "" {
 			return fail(2, "--ui-dev needs a loopback Vite URL")
 		}
-		// The CLI always uses TCP on loopback; this keeps a private socket and any
-		// public listener out of the template. --tcp-only is what EnsureRunning passes.
+		if err := validateHTTPSArgs(a); err != nil {
+			return err
+		}
+		if a.has("domain") {
+			opts := appserver.ServeOptions{TakeOver: a.bools["take-over"], Headless: true, HTTPSDomain: a.flags["domain"], ACMEEmail: a.flags["acme-email"], MCP: a.bools["mcp"]}
+			if opts.MCP {
+				opts.MCPHandler = newMCPHandler
+			}
+			appconfig.MarkPublicServing()
+			return appserver.Serve(p, opts)
+		}
+		// Without --domain the CLI always uses TCP on loopback; this keeps a private
+		// socket and any public listener out. --tcp-only is what EnsureRunning passes.
 		return appserver.Serve(p, appserver.ServeOptions{TakeOver: a.bools["take-over"], UIDev: a.flags["ui-dev"], TCPOnly: true})
 	case "start", "ensure-running":
-		if err := appserver.EnsureRunning(p, appserver.StartOptions{TCP: true, TakeOver: a.bools["take-over"]}); err != nil {
+		if err := ensureLocalTCP(p, appserver.StartOptions{TCP: true, TakeOver: a.bools["take-over"]}); err != nil {
 			return fail(1, "%v", err)
 		}
 		Print(map[string]any{"status": "running", "url": p.URL(), "db": p.DB, "instance": p.Config.Instance}, pretty)
@@ -315,7 +326,15 @@ parsed:
 		Print(map[string]any{"password": "changed"}, pretty)
 		return nil
 	case "open":
-		if err := appserver.EnsureRunning(p, appserver.StartOptions{TCP: true}); err != nil {
+		if a.bools["public"] {
+			out, err := openPublicReader(p)
+			if err != nil {
+				return err
+			}
+			Print(out, pretty)
+			return nil
+		}
+		if err := ensureLocalTCP(p, appserver.StartOptions{TCP: true}); err != nil {
 			return fail(1, "%v", err)
 		}
 		data, err := appserver.LocalCall(p, "/api/bundle/login-code", map[string]any{})
@@ -392,6 +411,9 @@ func runRemote(base, command string, a *args, pretty bool) error {
 	}
 	switch command {
 	case "open":
+		if a.bools["public"] {
+			return fail(2, "open --public runs on the computer that hosts the server, not with --url")
+		}
 		if !a.bools["no-browser"] {
 			if err := appserver.OpenBrowser(base); err != nil {
 				fmt.Fprintln(os.Stderr, "could not open a browser:", err)

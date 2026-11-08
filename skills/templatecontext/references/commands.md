@@ -53,6 +53,7 @@ One read-only `SELECT` (alias `query`). Prints `{"columns", "rows", "truncated"}
 - `whoami`: `{"id", "url"}` of the project's account (and `db` locally); it confirms the session works.
 - `status`: locally, paths, port, lease, write-back conflicts and `running`; with `--url`, `reachable` and `loggedIn`.
 - `open [--no-browser]`: the reader. Locally it prints a single-use `signInLink` valid for 2 minutes.
-- Local only: `ensure-running` (alias `start`), `stop`, `flush`, `recover --keep local|synced` (only on the user's decision), `login-code`, `password`, `init`, `serve`, `tunnel serve`.
+- `open --public`: on the host of a service started with `--domain`, a sign-in link for the public origin. It never starts a server.
+- Local only: `ensure-running` (alias `start`), `stop`, `flush`, `recover --keep local|synced` (only on the user's decision), `login-code`, `password`, `init`, `serve`, `tunnel serve`. `serve --headless --domain HOST [--acme-email EMAIL] [--mcp]` is opt-in public mode, only when the user asks; it needs a password saved with at least 12 characters, at least 5 of them different, and while it runs data commands and `open` without `--public` cannot reach the server.
 - Remote only: `login --url URL --code-stdin` (or the user's own `login --url URL` with the password), `logout --url URL`, `tunnel forward --address-stdin`.
 - `skill [--agent claude-code|codex|antigravity|all] [--dir DIR]` reinstalls this skill with the current paths.

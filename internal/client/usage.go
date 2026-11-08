@@ -13,11 +13,17 @@ Setup and server:
                        reader password), start the server
   ensure-running       start the server in the background unless it runs (alias: start)
   serve [--ui-dev URL]  run in the foreground; optionally proxy a loopback Vite UI
+  serve --headless --domain HOST [--acme-email EMAIL] [--mcp]
+                       public mode: also serve the web app on HOST with native
+                       HTTPS (ports 443 and 80); --mcp adds remote MCP with OAuth.
+                       Needs a strong account password; refused otherwise
   stop                 write back the database and stop the server
   status               show paths, port, lease and whether the server runs
   open [--no-browser]  open the reader signed in (single-use link, valid for
                        2 minutes); --no-browser prints the link, e.g. to open
                        it on a computer that uses --url
+  open --public        print a sign-in link for the public origin; the server
+                       must already run with --domain
   password [--password-stdin]
                        change the reader password
   login-code [--ttl SECONDS]

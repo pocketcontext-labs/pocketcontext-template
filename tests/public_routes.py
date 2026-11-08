@@ -149,13 +149,42 @@ def main():
                         problems.append(f'the server accepts connections on {address}')
                 except OSError:
                     pass
-            # There is no public listener to enable.
-            for option in ('--domain', '--mcp', '--hosted'):
-                result = run('serve', '--db', str(db), option, 'example.invalid')
-                if result.returncode != 2 or 'unknown option' not in result.stderr:
-                    problems.append(f'serve accepts {option}: exit {result.returncode}: {result.stderr.strip()[-200:]}')
+            # Hosted container mode is not offered, and public mode needs explicit, valid options.
+            result = run('serve', '--db', str(db), '--hosted')
+            if result.returncode != 2 or 'unknown option' not in result.stderr:
+                problems.append(f'serve accepts --hosted: exit {result.returncode}: {result.stderr.strip()[-200:]}')
+            for args, expected in (
+                (('--mcp',), '--mcp requires --domain'),
+                (('--acme-email', 'a@example.invalid'), '--acme-email requires --domain'),
+                (('--headless',), '--headless requires --domain'),
+                (('--port', '9443'), 'unknown option --port'),
+                (('--domain', 'example.invalid'), '--domain requires --headless'),
+                (('--domain', 'example.invalid', '--headless', '--tcp-only'), 'cannot be combined'),
+                (('--domain', 'example.invalid', '--headless', '--port', '9443'), 'cannot be combined'),
+                (('--domain', 'example.invalid', '--headless', '--ui-dev', 'http://127.0.0.1:5173'), 'cannot be combined'),
+                (('--domain', 'https://example.invalid', '--headless'), 'domain must'),
+                (('--domain', 'example.invalid', '--headless', '--acme-email', 'not an address'), '--acme-email must be'),
+            ):
+                result = run('serve', '--db', str(db), *args)
+                if result.returncode != 2 or expected not in result.stderr:
+                    problems.append(f'serve {" ".join(args)}: exit {result.returncode}: {result.stderr.strip()[-200:]}')
+            # open --public never starts a server, and refuses a loopback-only one.
+            result = run('open', '--db', str(db), '--public')
+            if result.returncode != 1 or 'public HTTPS' not in result.stderr:
+                problems.append(f'open --public on a loopback server: exit {result.returncode}: {result.stderr.strip()[-200:]}')
         finally:
             run('stop', '--db', str(db))
+        # Public mode refuses a password too weak for the internet, before listening.
+        weak = Path(temp) / 'weak' / 'public.db'
+        weak.parent.mkdir()
+        weak_port = free_port()
+        result = run('init', '--db', str(weak), '--port', str(weak_port), '--password-stdin', stdin='shortpw1\n')
+        if result.returncode != 0:
+            problems.append(f'init with a short password: exit {result.returncode}: {result.stderr.strip()[-200:]}')
+        run('stop', '--db', str(weak))
+        result = run('serve', '--db', str(weak), '--headless', '--domain', 'example.invalid')
+        if result.returncode == 0 or 'public mode refused' not in result.stderr or 'password' not in result.stderr:
+            problems.append(f'public mode accepted a weak password: exit {result.returncode}: {result.stderr.strip()[-200:]}')
     for line in problems:
         print('FAIL -', line)
     if problems:

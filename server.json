@@ -8,6 +8,11 @@
       "updated"
     ]
   },
+  "public": {
+    "collections": [
+      "greetings"
+    ]
+  },
   "timeoutMs": 2000,
   "maxRows": 500,
   "maxBytes": 1048576,

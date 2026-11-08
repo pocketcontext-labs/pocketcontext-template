@@ -63,6 +63,12 @@ func tunnelServe(ctx context.Context, a *args, pretty bool) error {
 	}
 	chosen := id.Region != nil
 	running, _ := appserver.Running(p)
+	if running {
+		// A public service starts with only its private socket; the tunnel needs the port.
+		if err := appserver.EnableTCP(p); err != nil {
+			return fail(1, "%v", err)
+		}
+	}
 	err = tunnel.Serve(ctx, p.Config.Port, id, func(addr tailcat.Addr) {
 		if !chosen && id.Region != nil {
 			if err := id.Save(path); err != nil {

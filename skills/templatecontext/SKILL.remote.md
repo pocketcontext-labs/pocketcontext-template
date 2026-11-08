@@ -52,4 +52,4 @@ The reader is the server's own page at `{{URL}}`. For a signed-in browser, `temp
 
 ## Server
 
-Running, backing up and recovering the server, changing the password and issuing login codes happen on the agent computer, not here; those commands are refused with `--url`.
+Running, backing up and recovering the server, changing the password and issuing login codes happen on the agent computer, not here; those commands are refused with `--url`. So do public HTTPS and MCP setup and `open --public`, which are opt-in and only for when the user asks. `--url` accepts only loopback URLs; do not point it at a domain. A server started with `--domain` has no loopback TCP port, so a tunnel or SSH forward cannot reach it.
