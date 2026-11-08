@@ -39,6 +39,7 @@ jobs:
           ! grep -q '^replace' go.mod
           test -z "$(go env GOWORK | grep -v '^off$')"
           grep -Eq '^[[:space:]]*github.com/pocketcontext-labs/pocketcontext-core v[0-9]+\.[0-9]+\.[0-9]+$' go.mod
+          go mod download github.com/pocketcontext-labs/pocketcontext-core
           diff build-tags.txt "$(go list -m -f '{{.Dir}}' github.com/pocketcontext-labs/pocketcontext-core)/build-tags.txt"
       - name: Development launcher tests
         run: node --test tests/dev_launcher.test.mjs
