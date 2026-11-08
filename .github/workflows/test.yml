@@ -61,6 +61,8 @@ jobs:
       # on any template identity left in the repository or the binary.
       - name: Identity check of the repository and binary
         run: $PY tests/identity_check.py --binary "$EXE"
+      - name: Frozen anonymous route table
+        run: $PY tests/public_routes.py --binary "$EXE"
       - name: End-to-end test with synthetic greetings
         run: |
           $PY tests/e2e.py --binary "$EXE"

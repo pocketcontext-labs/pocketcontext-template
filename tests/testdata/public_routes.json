@@ -1,0 +1,1592 @@
+[
+ {
+  "method": "GET",
+  "path": "/",
+  "allow": true
+ },
+ {
+  "method": "HEAD",
+  "path": "/",
+  "allow": true
+ },
+ {
+  "method": "POST",
+  "path": "/",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/index.html",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/index.html",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/index.html",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/index.html",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/index.html",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/index.html",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/assets/app.js",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/assets/app.js",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/assets/app.js",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/assets/app.js",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/assets/app.js",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/assets/app.js",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/assets/..%2fsecret",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/assets/..%2fsecret",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/assets/..%2fsecret",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/assets/..%2fsecret",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/assets/..%2fsecret",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/assets/..%2fsecret",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/bundle/login",
+  "allow": true
+ },
+ {
+  "method": "HEAD",
+  "path": "/bundle/login",
+  "allow": true
+ },
+ {
+  "method": "POST",
+  "path": "/bundle/login",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/bundle/login",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/bundle/login",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/bundle/login",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/bundle/login.js",
+  "allow": true
+ },
+ {
+  "method": "HEAD",
+  "path": "/bundle/login.js",
+  "allow": true
+ },
+ {
+  "method": "POST",
+  "path": "/bundle/login.js",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/bundle/login.js",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/bundle/login.js",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/bundle/login.js",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/_",
+  "allow": true
+ },
+ {
+  "method": "HEAD",
+  "path": "/_",
+  "allow": true
+ },
+ {
+  "method": "POST",
+  "path": "/_",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/_",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/_",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/_",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/_/",
+  "allow": true
+ },
+ {
+  "method": "HEAD",
+  "path": "/_/",
+  "allow": true
+ },
+ {
+  "method": "POST",
+  "path": "/_/",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/_/",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/_/",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/_/",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/up",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/up",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/up",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/up",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/up",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/up",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/mcp",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/mcp",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/mcp",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/mcp",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/mcp",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/mcp",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/.well-known/oauth-protected-resource",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/.well-known/oauth-protected-resource",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/.well-known/oauth-protected-resource",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/.well-known/oauth-protected-resource",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/.well-known/oauth-protected-resource",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/.well-known/oauth-protected-resource",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/.well-known/oauth-authorization-server",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/.well-known/oauth-authorization-server",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/.well-known/oauth-authorization-server",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/.well-known/oauth-authorization-server",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/.well-known/oauth-authorization-server",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/.well-known/oauth-authorization-server",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/oauth/authorize",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/oauth/authorize",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/oauth/authorize",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/oauth/authorize",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/oauth/authorize",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/oauth/authorize",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/oauth/token",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/oauth/token",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/oauth/token",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/oauth/token",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/oauth/token",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/oauth/token",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/oauth/register",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/oauth/register",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/oauth/register",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/oauth/register",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/oauth/register",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/oauth/register",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/health",
+  "allow": true
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/health",
+  "allow": true
+ },
+ {
+  "method": "POST",
+  "path": "/api/health",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/health",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/health",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/health",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/settings",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/settings",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/settings",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/settings",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/settings",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/settings",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/logs",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/logs",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/logs",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/logs",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/logs",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/logs",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/backups",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/backups",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/backups",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/backups",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/backups",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/backups",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/batch",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/batch",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/batch",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/batch",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/batch",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/batch",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/crons",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/crons",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/crons",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/crons",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/crons",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/crons",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/realtime",
+  "allow": true
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/realtime",
+  "allow": true
+ },
+ {
+  "method": "POST",
+  "path": "/api/realtime",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/realtime",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/realtime",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/realtime",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/files/token",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/files/token",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/files/token",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/files/token",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/files/token",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/files/token",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/context/query",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/context/query",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/context/query",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/context/query",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/context/query",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/context/query",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/context/search",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/context/search",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/context/search",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/context/search",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/context/search",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/context/search",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/context/schema",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/context/schema",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/context/schema",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/context/schema",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/context/schema",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/context/schema",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/context/maintenance",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/context/maintenance",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/context/maintenance",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/context/maintenance",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/context/maintenance",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/context/maintenance",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/context/traces",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/context/traces",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/context/traces",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/context/traces",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/context/traces",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/context/traces",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/instance",
+  "allow": true
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/instance",
+  "allow": true
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/instance",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/instance",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/instance",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/instance",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/token",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/token",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/token",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/token",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/token",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/token",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/account",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/account",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/account",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/account",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/account",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/account",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/password",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/password",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/password",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/password",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/password",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/password",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/login-code",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/login-code",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/login-code",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/login-code",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/login-code",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/login-code",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/reader-code",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/reader-code",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/reader-code",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/reader-code",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/reader-code",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/reader-code",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/redeem",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/redeem",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/redeem",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/redeem",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/redeem",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/redeem",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/flush",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/flush",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/flush",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/flush",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/flush",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/flush",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/stop",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/stop",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/stop",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/stop",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/stop",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/stop",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/name",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/name",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/name",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/name",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/name",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/name",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/enable-tcp",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/enable-tcp",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/enable-tcp",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/enable-tcp",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/enable-tcp",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/enable-tcp",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/bundle/version",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/bundle/version",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/bundle/version",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/bundle/version",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/bundle/version",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/bundle/version",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections/users/records",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections/users/records",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections/users/records",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections/users/records",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections/users/records",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections/users/records",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections/users/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections/users/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections/users/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections/users/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections/users/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections/users/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections/users/auth-methods",
+  "allow": true
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections/users/auth-methods",
+  "allow": true
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections/users/auth-methods",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections/users/auth-methods",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections/users/auth-methods",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections/users/auth-methods",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections/users/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections/users/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections/users/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections/users/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections/users/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections/users/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections/users/auth-refresh",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections/users/auth-refresh",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections/users/auth-refresh",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections/users/auth-refresh",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections/users/auth-refresh",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections/users/auth-refresh",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections/users/request-password-reset",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections/users/request-password-reset",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections/users/request-password-reset",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections/users/request-password-reset",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections/users/request-password-reset",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections/users/request-password-reset",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections/users/request-otp",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections/users/request-otp",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections/users/request-otp",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections/users/request-otp",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections/users/request-otp",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections/users/request-otp",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections/_superusers/records",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections/_superusers/records",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections/_superusers/records",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections/_superusers/records",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections/_superusers/records",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections/_superusers/records",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections/_superusers/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections/_superusers/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections/_superusers/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections/_superusers/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections/_superusers/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections/_superusers/auth-with-password",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections/greetings/records",
+  "allow": true
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections/greetings/records",
+  "allow": true
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections/greetings/records",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections/greetings/records",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections/greetings/records",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections/greetings/records",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/collections/greetings/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/collections/greetings/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/collections/greetings/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/collections/greetings/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/collections/greetings/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/collections/greetings/records/aaaaaaaaaaaaaaa",
+  "allow": false
+ },
+ {
+  "method": "GET",
+  "path": "/api/files/users/aaaaaaaaaaaaaaa/file.txt",
+  "allow": false
+ },
+ {
+  "method": "HEAD",
+  "path": "/api/files/users/aaaaaaaaaaaaaaa/file.txt",
+  "allow": false
+ },
+ {
+  "method": "POST",
+  "path": "/api/files/users/aaaaaaaaaaaaaaa/file.txt",
+  "allow": false
+ },
+ {
+  "method": "PUT",
+  "path": "/api/files/users/aaaaaaaaaaaaaaa/file.txt",
+  "allow": false
+ },
+ {
+  "method": "PATCH",
+  "path": "/api/files/users/aaaaaaaaaaaaaaa/file.txt",
+  "allow": false
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/files/users/aaaaaaaaaaaaaaa/file.txt",
+  "allow": false
+ }
+]

@@ -94,6 +94,7 @@ jobs:
           "dist/$RELEASE_PLATFORM/$exe" version | grep -F "templatecontext $RELEASE_VERSION ($RELEASE_COMMIT)"
           "$PY" tests/name_check.py --binary "dist/$RELEASE_PLATFORM/$exe"
           "$PY" tests/identity_check.py --binary "dist/$RELEASE_PLATFORM/$exe"
+          "$PY" tests/public_routes.py --binary "dist/$RELEASE_PLATFORM/$exe"
           "$PY" tests/e2e.py --binary "dist/$RELEASE_PLATFORM/$exe"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

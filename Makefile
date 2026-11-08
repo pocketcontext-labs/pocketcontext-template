@@ -26,4 +26,5 @@ names: build
 identity: build
 	python3 tests/identity_check.py --binary bin/templatecontext
 e2e: names identity
+	python3 tests/public_routes.py --binary bin/templatecontext
 	python3 tests/e2e.py --binary bin/templatecontext
