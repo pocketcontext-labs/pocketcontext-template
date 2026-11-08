@@ -240,6 +240,8 @@ func newPublicFixture(t *testing.T) *publicFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The SQL reader closes on terminate; Windows cannot delete the database while it is open.
+	t.Cleanup(func() { _ = app.OnTerminate().Trigger(&core.TerminateEvent{App: app}) })
 	account := publicAccount(t, app, "a stronger synthetic password")
 	token, err := account.NewAuthToken()
 	if err != nil {

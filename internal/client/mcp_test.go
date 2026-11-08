@@ -53,6 +53,8 @@ func newMCPFixture(t *testing.T) *mcpFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The SQL reader closes on terminate; Windows cannot delete the database while it is open.
+	t.Cleanup(func() { _ = app.OnTerminate().Trigger(&core.TerminateEvent{App: app}) })
 	router = test.Router()
 	users, err := app.FindCollectionByNameOrId("users")
 	if err != nil {
