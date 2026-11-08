@@ -14,4 +14,6 @@ PocketBase was then upgraded from v0.40.4 to v0.41.1, matching github.com/pocket
 
 The vendored server in `internal/pocketcontext/` keeps its upstream name; it comes from github.com/pocketcontext/pocketcontext at commit `20843b7c888daaba55f0646dd77455b7b309d4cc` (see `internal/pocketcontext/VENDORED.md`).
 
+The template now builds on the shared library `github.com/pocketcontext-labs/pocketcontext-core`: the project, sync-safe database handling, lease, local routes, UI development proxy, tunnel and vendored `database`, `sqliteuri` and maintenance packages live there. Identity, policy and hooks are in `internal/appconfig`. `internal/bundle` and `internal/tunnel` are gone; references to them above describe the earlier layout.
+
 A product derived from this template is a full fork. Review security fixes in PocketContext and in the vendored server and port the relevant ones by hand.

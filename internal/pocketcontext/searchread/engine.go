@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/pocketcontext-labs/pocketcontext-template/internal/pocketcontext/sqliteuri"
+	"github.com/pocketcontext-labs/pocketcontext-core/sqliteuri"
 	"io"
 	"math"
 	"path/filepath"

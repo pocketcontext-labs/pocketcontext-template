@@ -79,11 +79,11 @@ jobs:
           pnpm test
           pnpm build
       # Windows runners provide MinGW-w64 gcc for CGO. The vendored server's
-      # upstream tests assume POSIX permissions, so Windows runs the bundle's own.
+      # upstream tests assume POSIX permissions, so Windows runs the application's own.
       - name: Unit tests
         run: |
           packages=./...
-          if [ "$RUNNER_OS" = Windows ]; then packages="./internal/bundle ./internal/client ./internal/tunnel"; fi
+          if [ "$RUNNER_OS" = Windows ]; then packages="./internal/appconfig ./internal/client"; fi
           CGO_ENABLED=1 go test -tags "$(cat build-tags.txt)" $packages
       - name: Build and inspect the release binary; package notices
         run: $PY scripts/release.py build --version "$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --platform "$RELEASE_PLATFORM" --output dist

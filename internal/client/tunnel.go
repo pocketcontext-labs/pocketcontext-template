@@ -16,13 +16,14 @@ import (
 
 	"github.com/tailscale/tailcat"
 
-	"github.com/pocketcontext-labs/pocketcontext-template/internal/bundle"
-	"github.com/pocketcontext-labs/pocketcontext-template/internal/tunnel"
+	"github.com/pocketcontext-labs/pocketcontext-core/appserver"
+	"github.com/pocketcontext-labs/pocketcontext-core/tunnel"
+	"github.com/pocketcontext-labs/pocketcontext-template/internal/appconfig"
 )
 
 // identityFile is the tunnel identity in the project's private cache: never
 // in the synced project folder, which other computers and people may read.
-func identityFile(p *bundle.Project) string { return filepath.Join(p.Cache, "tunnel.json") }
+func identityFile(p *appserver.Project) string { return filepath.Join(p.Cache, "tunnel.json") }
 
 // runTunnel runs `tunnel serve` on the agent computer or `tunnel forward` on
 // the person's computer. Both run in the foreground until interrupted.
@@ -48,7 +49,7 @@ func tunnelServe(ctx context.Context, a *args, pretty bool) error {
 	if len(a.pos) != 1 || a.bools["address-stdin"] {
 		return fail(2, "usage: templatecontext tunnel serve [--new-address]")
 	}
-	p, err := bundle.Resolve(a.flags["db"])
+	p, err := appconfig.Runtime.Resolve(a.flags["db"])
 	if err != nil {
 		return fail(2, "%v", err)
 	}
@@ -56,12 +57,12 @@ func tunnelServe(ctx context.Context, a *args, pretty bool) error {
 		return fail(2, "no TemplateContext database at %s; run `templatecontext init` first, or pass --db", p.DB)
 	}
 	path := identityFile(p)
-	id, err := tunnel.LoadIdentity(path, a.bools["new-address"])
+	id, err := tunnel.LoadIdentity(appconfig.Identity.Command, path, a.bools["new-address"])
 	if err != nil {
 		return fail(1, "%v", err)
 	}
 	chosen := id.Region != nil
-	running, _ := bundle.Running(p)
+	running, _ := appserver.Running(p)
 	err = tunnel.Serve(ctx, p.Config.Port, id, func(addr tailcat.Addr) {
 		if !chosen && id.Region != nil {
 			if err := id.Save(path); err != nil {
@@ -101,16 +102,16 @@ func tunnelForward(ctx context.Context, a *args, pretty bool) error {
 	default:
 		return fail(2, "usage: templatecontext tunnel forward (ADDRESS | --address-stdin) [--url http://127.0.0.1:PORT]")
 	}
-	addr, err := tunnel.ParseAddress(strings.TrimSpace(text))
+	addr, err := tunnel.ParseAddress(appconfig.Identity.Command, strings.TrimSpace(text))
 	if err != nil {
 		return fail(2, "%v", err)
 	}
 	raw, fromFlag := a.flags["url"], a.has("url")
 	if !fromFlag {
-		raw = os.Getenv("TEMPLATECONTEXT_URL")
+		raw = os.Getenv(appconfig.Identity.EnvPrefix + "_URL")
 	}
 	if raw == "" {
-		raw = fmt.Sprintf("http://127.0.0.1:%d", bundle.DefaultPort)
+		raw = fmt.Sprintf("http://127.0.0.1:%d", appconfig.Identity.DefaultPort)
 	}
 	base, err := normalizeURL(raw)
 	if err != nil {
@@ -128,7 +129,7 @@ func tunnelForward(ctx context.Context, a *args, pretty bool) error {
 	}
 	Print(map[string]any{"url": base, "forwarding": true,
 		"note": "the agent computer's TemplateContext is reachable at this URL while this runs; sign in with `templatecontext login --url " + base + " --code-stdin`. Stop with Ctrl-C."}, pretty)
-	if err := tunnel.Forward(ctx, addr, ln, port); err != nil {
+	if err := tunnel.Forward(ctx, appconfig.Identity.Command, addr, ln, port); err != nil {
 		return fail(1, "the forward stopped: %v", err)
 	}
 	return nil

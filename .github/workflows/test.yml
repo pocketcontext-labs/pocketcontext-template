@@ -34,14 +34,20 @@ jobs:
           pnpm typecheck
           pnpm test
           pnpm build
+      - name: Shared library pin and build tags
+        run: |
+          ! grep -q '^replace' go.mod
+          test -z "$(go env GOWORK | grep -v '^off$')"
+          grep -Eq '^[[:space:]]*github.com/pocketcontext-labs/pocketcontext-core v[0-9]+\.[0-9]+\.[0-9]+$' go.mod
+          diff build-tags.txt "$(go list -m -f '{{.Dir}}' github.com/pocketcontext-labs/pocketcontext-core)/build-tags.txt"
       - name: Development launcher tests
         run: node --test tests/dev_launcher.test.mjs
       # Windows runners provide MinGW-w64 gcc for CGO. The vendored server's
-      # upstream tests assume POSIX permissions, so Windows runs the bundle's own.
+      # upstream tests assume POSIX permissions, so Windows runs the application's own.
       - name: Unit tests
         run: |
           packages=./...
-          if [ "$RUNNER_OS" = Windows ]; then packages="./internal/bundle ./internal/client ./internal/tunnel"; fi
+          if [ "$RUNNER_OS" = Windows ]; then packages="./internal/appconfig ./internal/client"; fi
           CGO_ENABLED=1 go test -tags "$(cat build-tags.txt)" $packages
       - name: Build the binary
         run: |

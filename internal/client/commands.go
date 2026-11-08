@@ -11,7 +11,9 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/pocketcontext-labs/pocketcontext-template/internal/bundle"
+	"github.com/pocketcontext-labs/pocketcontext-core/appserver"
+	"github.com/pocketcontext-labs/pocketcontext-template/internal/appconfig"
+	"github.com/pocketcontext-labs/pocketcontext-template/internal/buildinfo"
 )
 
 // args is a small argparse-like parser: flags may appear anywhere.
@@ -180,15 +182,15 @@ parsed:
 		}
 	}
 	if command == "version" || command == "--version" {
-		line := "templatecontext " + bundle.Version
-		if bundle.Commit != "" {
-			line += " (" + bundle.Commit + ")"
+		line := "templatecontext " + buildinfo.Version
+		if buildinfo.Commit != "" {
+			line += " (" + buildinfo.Commit + ")"
 		}
 		fmt.Println(line)
 		return nil
 	}
 	spec := map[string][2][]string{
-		"serve":          {{"ui-dev"}, {"take-over"}},
+		"serve":          {{"ui-dev"}, {"take-over", "tcp-only"}},
 		"start":          {nil, {"take-over"}},
 		"ensure-running": {nil, {"take-over"}},
 		"stop":           {nil, nil},
@@ -231,7 +233,7 @@ parsed:
 		return fail(2, "choose --url or --db, not both")
 	}
 	if !fromFlag && !a.has("db") {
-		remote = os.Getenv("TEMPLATECONTEXT_URL")
+		remote = os.Getenv(appconfig.Identity.EnvPrefix + "_URL")
 	}
 	if fromFlag || remote != "" {
 		base, err := normalizeURL(remote)
@@ -243,7 +245,7 @@ parsed:
 	if command == "login" || command == "logout" {
 		return fail(2, "usage: templatecontext %s --url http://127.0.0.1:PORT", command)
 	}
-	p, err := bundle.Resolve(a.flags["db"])
+	p, err := appconfig.Runtime.Resolve(a.flags["db"])
 	if err != nil {
 		return fail(2, "%v", err)
 	}
@@ -252,34 +254,36 @@ parsed:
 		if a.has("ui-dev") && a.flags["ui-dev"] == "" {
 			return fail(2, "--ui-dev needs a loopback Vite URL")
 		}
-		return bundle.Serve(p, bundle.ServeOptions{TakeOver: a.bools["take-over"], UIDev: a.flags["ui-dev"]})
+		// The CLI always uses TCP on loopback; this keeps a private socket and any
+		// public listener out of the template. --tcp-only is what EnsureRunning passes.
+		return appserver.Serve(p, appserver.ServeOptions{TakeOver: a.bools["take-over"], UIDev: a.flags["ui-dev"], TCPOnly: true})
 	case "start", "ensure-running":
-		if err := bundle.EnsureRunning(p, bundle.StartOptions{TakeOver: a.bools["take-over"]}); err != nil {
+		if err := appserver.EnsureRunning(p, appserver.StartOptions{TCP: true, TakeOver: a.bools["take-over"]}); err != nil {
 			return fail(1, "%v", err)
 		}
 		Print(map[string]any{"status": "running", "url": p.URL(), "db": p.DB, "instance": p.Config.Instance}, pretty)
 		return nil
 	case "stop":
-		if err := bundle.Stop(p); err != nil {
+		if err := appserver.Stop(p); err != nil {
 			return fail(1, "%v", err)
 		}
 		Print(map[string]any{"status": "stopped", "db": p.DB}, pretty)
 		return nil
 	case "status":
-		running, err := bundle.Running(p)
-		lease, _ := bundle.ReadLease(p)
+		running, err := appserver.Running(p)
+		lease, _ := appserver.ReadLease(p)
 		out := map[string]any{"db": p.DB, "url": p.URL(), "running": running, "config": p.ConfigPath, "storage": p.StorageDir(),
-			"cache": p.Cache, "log": p.LogFile(), "lease": lease, "conflicts": bundle.Conflicts(p), "version": bundle.Version}
+			"cache": p.Cache, "log": p.LogFile(), "lease": lease, "conflicts": appserver.Conflicts(p), "version": buildinfo.Version}
 		if err != nil {
 			out["error"] = err.Error()
 		}
 		Print(out, pretty)
 		return nil
 	case "flush":
-		if err := bundle.EnsureRunning(p, bundle.StartOptions{}); err != nil {
+		if err := appserver.EnsureRunning(p, appserver.StartOptions{TCP: true}); err != nil {
 			return fail(1, "%v", err)
 		}
-		data, err := bundle.LocalCall(p, "/api/bundle/flush", map[string]any{})
+		data, err := appserver.LocalCall(p, "/api/bundle/flush", map[string]any{})
 		if err != nil {
 			return fail(1, "%v", err)
 		}
@@ -290,7 +294,7 @@ parsed:
 		if keep != "local" && keep != "synced" {
 			return fail(2, "usage: templatecontext recover --keep local|synced")
 		}
-		if err := bundle.Recover(p, keep == "local"); err != nil {
+		if err := appserver.Recover(p, keep == "local"); err != nil {
 			return fail(1, "%v", err)
 		}
 		Print(map[string]any{"recovered": keep, "db": p.DB}, pretty)
@@ -302,25 +306,25 @@ parsed:
 		if err != nil {
 			return err
 		}
-		if err := bundle.EnsureRunning(p, bundle.StartOptions{}); err != nil {
+		if err := appserver.EnsureRunning(p, appserver.StartOptions{TCP: true}); err != nil {
 			return fail(1, "%v", err)
 		}
-		if _, err := bundle.LocalCall(p, "/api/bundle/password", map[string]string{"password": password}); err != nil {
+		if _, err := appserver.LocalCall(p, "/api/bundle/account", map[string]string{"password": password}); err != nil {
 			return fail(1, "%v", err)
 		}
 		Print(map[string]any{"password": "changed"}, pretty)
 		return nil
 	case "open":
-		if err := bundle.EnsureRunning(p, bundle.StartOptions{}); err != nil {
+		if err := appserver.EnsureRunning(p, appserver.StartOptions{TCP: true}); err != nil {
 			return fail(1, "%v", err)
 		}
-		data, err := bundle.LocalCall(p, "/api/bundle/login-code", map[string]any{})
+		data, err := appserver.LocalCall(p, "/api/bundle/login-code", map[string]any{})
 		if err != nil {
 			return fail(1, "%v", err)
 		}
 		link, _ := data["url"].(string)
 		if !a.bools["no-browser"] {
-			if err := bundle.OpenBrowser(link); err != nil {
+			if err := appserver.OpenBrowser(link); err != nil {
 				fmt.Fprintln(os.Stderr, "could not open a browser:", err)
 			}
 		}
@@ -389,7 +393,7 @@ func runRemote(base, command string, a *args, pretty bool) error {
 	switch command {
 	case "open":
 		if !a.bools["no-browser"] {
-			if err := bundle.OpenBrowser(base); err != nil {
+			if err := appserver.OpenBrowser(base); err != nil {
 				fmt.Fprintln(os.Stderr, "could not open a browser:", err)
 			}
 		}
@@ -487,7 +491,7 @@ func runData(c *Client, command string, a *args, pretty bool) error {
 const loginCodeTTL = 600
 
 // loginCode issues a one-time sign-in code for `login --url URL --code-stdin`.
-func loginCode(p *bundle.Project, a *args, pretty bool) error {
+func loginCode(p *appserver.Project, a *args, pretty bool) error {
 	if len(a.pos) != 0 {
 		return fail(2, "usage: templatecontext login-code [--ttl SECONDS]")
 	}
@@ -495,13 +499,13 @@ func loginCode(p *bundle.Project, a *args, pretty bool) error {
 	if err != nil {
 		return err
 	}
-	if !bundle.ValidCodeTTL(ttl) {
-		return fail(2, "--ttl must be %d-%d seconds", bundle.MinCodeTTL, bundle.MaxCodeTTL)
+	if !appserver.ValidCodeTTL(ttl) {
+		return fail(2, "--ttl must be %d-%d seconds", appserver.MinCodeTTL, appserver.MaxCodeTTL)
 	}
-	if err := bundle.EnsureRunning(p, bundle.StartOptions{}); err != nil {
+	if err := appserver.EnsureRunning(p, appserver.StartOptions{TCP: true}); err != nil {
 		return fail(1, "%v", err)
 	}
-	result, err := bundle.LocalCall(p, "/api/bundle/login-code", map[string]any{"ttl": ttl})
+	result, err := appserver.LocalCall(p, "/api/bundle/login-code", map[string]any{"ttl": ttl})
 	if err != nil {
 		return fail(1, "%v", err)
 	}
@@ -509,7 +513,7 @@ func loginCode(p *bundle.Project, a *args, pretty bool) error {
 	return nil
 }
 
-func initProject(p *bundle.Project, a *args, pretty bool) error {
+func initProject(p *appserver.Project, a *args, pretty bool) error {
 	_, statErr := os.Stat(p.ConfigPath)
 	fresh := errors.Is(statErr, os.ErrNotExist)
 	if a.has("port") {
@@ -528,12 +532,12 @@ func initProject(p *bundle.Project, a *args, pretty bool) error {
 	if err := p.SaveConfig(); err != nil {
 		return err
 	}
-	if err := bundle.EnsureRunning(p, bundle.StartOptions{}); err != nil {
+	if err := appserver.EnsureRunning(p, appserver.StartOptions{TCP: true}); err != nil {
 		return fail(1, "%v", err)
 	}
 	// An existing account (for example created on another computer) keeps its
 	// password unless a new one arrives on standard input.
-	_, existsErr := bundle.LocalCall(p, "/api/bundle/token", map[string]any{})
+	_, existsErr := appserver.LocalCall(p, "/api/bundle/token", map[string]any{})
 	created := existsErr != nil
 	if created || a.bools["password-stdin"] {
 		password, err := readPassword(a.bools["password-stdin"], true)
@@ -544,11 +548,11 @@ func initProject(p *bundle.Project, a *args, pretty bool) error {
 		if created {
 			route = "/api/bundle/account"
 		}
-		if _, err := bundle.LocalCall(p, route, map[string]string{"password": password}); err != nil {
+		if _, err := appserver.LocalCall(p, route, map[string]string{"password": password}); err != nil {
 			return fail(1, "%v", err)
 		}
 	}
-	if _, err := bundle.LocalCall(p, "/api/bundle/flush", map[string]any{}); err != nil {
+	if _, err := appserver.LocalCall(p, "/api/bundle/flush", map[string]any{}); err != nil {
 		return fail(1, "saving %s: %v", p.DB, err)
 	}
 	if _, err := New(p); err != nil {

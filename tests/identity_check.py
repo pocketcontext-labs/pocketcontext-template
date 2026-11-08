@@ -4,7 +4,9 @@
 In a derived product it scans the paths and contents (text and binary) of every
 tracked or new, non-ignored file, case-insensitively, for the template's
 lowercase id, its repository name, its hello-world collection and its default
-port, and fails on any occurrence outside the explicit allowlist below. With
+port, requires every identity field in internal/appconfig/appconfig.go to differ
+from the template's value (including the skill, profile registry, app id, port and
+executable, whose folder cmd/<Command> must exist), and fails on any occurrence outside the explicit allowlist below. With
 --binary PATH it also scans the bytes of a built executable.
 
 In the template itself (template.json present and go.mod still naming the
@@ -59,6 +61,21 @@ ALLOWED_BINARY = [
 # Files and folders the template must contain with its identity, so that the
 # inverted check proves the scanner still sees what a derived product renames.
 TEMPLATE_PATHS = ['cmd/' + TEMPLATE_ID, 'skills/' + TEMPLATE_ID, 'pb_migrations/1810000100_' + TEMPLATE_COLLECTION + 's.js']
+
+# Every field of the application identity (internal/appconfig/appconfig.go) that
+# names the template, with the template's value. A derived product must set its
+# own value for each; LocalAccountEmail is a reserved address that names nothing.
+IDENTITY_FILE = 'internal/appconfig/appconfig.go'
+DISPLAY_NAME = 'Template' + 'Context'
+IDENTITY_FIELDS = {
+    'AppID': TEMPLATE_ID, 'DisplayName': DISPLAY_NAME, 'Command': TEMPLATE_ID, 'SkillName': TEMPLATE_ID,
+    'Marker': '.' + TEMPLATE_ID, 'RouterMarker': '.' + TEMPLATE_ID + '-router', 'RegistryNamespace': TEMPLATE_ID,
+    'CacheRoot': TEMPLATE_ID, 'SocketHost': TEMPLATE_ID + '.internal', 'SocketDirPrefix': TEMPLATE_ID,
+    'DefaultPort': TEMPLATE_PORT, 'DatabaseFile': TEMPLATE_ID + '.db', 'ConfigFile': TEMPLATE_ID + '.json',
+    'EnvPrefix': TEMPLATE_ID.upper(), 'LocalKeyHeader': 'X-' + DISPLAY_NAME + '-Local-Key',
+    'ReaderStorageKey': TEMPLATE_ID + '.reader.auth', 'HookGlobal': '$' + TEMPLATE_ID,
+}
+IDENTITY_FIELD = re.compile(r'^\s*(\w+):\s*"?([^",\s]*)"?,', re.M)
 
 SKIPPED_DIRS = {'.git', 'node_modules', 'bin', 'dist'}
 TOKEN = re.compile(rb'[A-Za-z0-9_./:@#+-]*')
@@ -161,6 +178,50 @@ def scan_binary(path):
     return matches, notes
 
 
+def identity_fields():
+    """The identity values in the Go source, or None when the file is missing."""
+    try:
+        text = (ROOT / IDENTITY_FILE).read_text(encoding='utf-8')
+    except OSError:
+        return None
+    body = text[text.index('appidentity.Identity{'):]
+    body = body[:body.index('\n}')]
+    return dict(IDENTITY_FIELD.findall(body))
+
+
+def identity_problems(template):
+    """Problems with the identity fields, the executable folder and the skill folder.
+
+    In a derived product every field must exist, differ from the template and
+    name a real executable and skill folder. In the template, every field must
+    still carry the template value and agree with template.json.
+    """
+    fields = identity_fields()
+    if fields is None:
+        return [f'{IDENTITY_FILE} is missing']
+    problems = []
+    for name, value in IDENTITY_FIELDS.items():
+        if name not in fields:
+            problems.append(f'{IDENTITY_FILE}: identity field {name} is missing')
+        elif template and fields[name] != value:
+            problems.append(f'{IDENTITY_FILE}: {name} is {fields[name]!r}, not the template value')
+        elif not template and fields[name].lower() == value.lower():
+            problems.append(f'{IDENTITY_FILE}: {name} still carries the template value')
+    command = fields.get('Command', '')
+    if command and not (ROOT / 'cmd' / command).is_dir():
+        problems.append(f'no executable folder cmd/{command} for Command')
+    skill = fields.get('SkillName', '')
+    if skill and not (ROOT / 'skills' / skill).is_dir():
+        problems.append(f'no skill folder skills/{skill} for SkillName')
+    if template and (ROOT / MARKER).is_file():
+        import json
+        listed = json.loads((ROOT / MARKER).read_text(encoding='utf-8')).get('identity', {})
+        for name, value in IDENTITY_FIELDS.items():
+            if str(listed.get(name)) != value:
+                problems.append(f'{MARKER}: identity.{name} is {listed.get(name)!r}, expected the value in {IDENTITY_FILE}')
+    return problems
+
+
 def report(found, limit):
     lines = []
     for name, hits in found.items():
@@ -185,6 +246,7 @@ def main():
         missing = [p for p in TEMPLATE_PATHS if not (ROOT / p).exists()]
         seen = {n: sum(1 for hits in found.values() for h in hits if n in h.lower()) for n in NEEDLES}
         problems = [f'expected template path missing: {p}' for p in missing]
+        problems += identity_problems(True)
         problems += [f'the template identity {n!r} was not found; is this still the template?' for n, c in seen.items() if c == 0]
         if args.binary:
             matches, _ = scan_binary(args.binary)
@@ -201,10 +263,11 @@ def main():
         return 0
 
     matches, notes = (scan_binary(args.binary) if args.binary else ([], []))
-    lines = report(found, args.limit) + stale + matches + notes
+    fields = identity_problems(False)
+    lines = report(found, args.limit) + stale + matches + notes + fields
     for line in lines:
         print(line)
-    count = sum(len(h) for h in found.values()) + len(stale) + len(matches)
+    count = sum(len(h) for h in found.values()) + len(stale) + len(matches) + len(fields)
     scope = f'{len(files)} files' + (f' and {args.binary}' if args.binary else '')
     if count:
         print(f'FAIL - {count} template identity occurrence(s) in {scope} '

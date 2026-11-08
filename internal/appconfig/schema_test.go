@@ -1,11 +1,16 @@
-package bundle
+package appconfig
 
 import (
 	"database/sql"
 	"errors"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+
+	"github.com/pocketcontext-labs/pocketcontext-core/appserver"
 
 	assets "github.com/pocketcontext-labs/pocketcontext-template"
 )
@@ -44,25 +49,33 @@ func TestCheckDatabaseRefusesOtherReleases(t *testing.T) {
 	if err != nil || len(entries) == 0 {
 		t.Fatal("no embedded migrations", err)
 	}
-	current := []string{"1640988000_init.go"} // PocketBase's own migrations are Go
+	var current []string
+	for _, m := range core.SystemMigrations.Items() {
+		current = append(current, m.File) // PocketBase's own migrations are Go
+	}
 	for _, e := range entries {
-		current = append(current, "pb_migrations/"+e.Name())
+		current = append(current, e.Name())
 	}
 	for name, path := range map[string]string{
 		"empty":   migrationsDB(t),
 		"current": migrationsDB(t, current...),
 	} {
-		if err := checkDatabase(path, "project.db"); err != nil {
+		if err := Runtime.CheckDatabase(path, "project.db"); err != nil {
 			t.Errorf("%s database refused: %v", name, err)
 		}
 	}
 	for name, files := range map[string][]string{
-		"multi-account": {"1640988000_init.go", "1800000000_users.js"},
-		"newer":         append(current, "1890000000_more.js"),
+		"multi-account": {"1800000000_users.js"},
+		"newer":         append(append([]string{}, current...), "1890000000_more.js"),
+		"foreign go":    {"1000000000_other.go"},
 	} {
-		err := checkDatabase(migrationsDB(t, files...), "project.db")
-		if !errors.Is(err, ErrUnsupportedDatabase) {
+		err := Runtime.CheckDatabase(migrationsDB(t, files...), "project.db")
+		if !errors.Is(err, appserver.ErrEarlierRelease) {
 			t.Errorf("%s database accepted: %v", name, err)
+			continue
+		}
+		if !strings.Contains(err.Error(), "different "+Identity.DisplayName+" release") {
+			t.Errorf("%s: unclear refusal: %v", name, err)
 		}
 	}
 }

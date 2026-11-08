@@ -7,18 +7,19 @@ import (
 	"strings"
 
 	assets "github.com/pocketcontext-labs/pocketcontext-template"
+	"github.com/pocketcontext-labs/pocketcontext-template/internal/appconfig"
 )
 
 // marker identifies skill directories written by this command, which may be replaced.
-const marker = ".templatecontext"
+var marker = appconfig.Identity.Marker
 
 // skillTargets are the user-level skill directories of supported agents. An
 // agent is skipped when its configuration directory does not exist.
 func skillTargets(home string) map[string][2]string {
 	return map[string][2]string{
-		"claude-code": {filepath.Join(home, ".claude"), filepath.Join(home, ".claude", "skills", "templatecontext")},
-		"codex":       {filepath.Join(home, ".codex"), filepath.Join(home, ".codex", "skills", "templatecontext")},
-		"antigravity": {filepath.Join(home, ".gemini"), filepath.Join(home, ".gemini", "antigravity", "skills", "templatecontext")},
+		"claude-code": {filepath.Join(home, ".claude"), filepath.Join(home, ".claude", "skills", appconfig.Identity.SkillName)},
+		"codex":       {filepath.Join(home, ".codex"), filepath.Join(home, ".codex", "skills", appconfig.Identity.SkillName)},
+		"antigravity": {filepath.Join(home, ".gemini"), filepath.Join(home, ".gemini", "antigravity", "skills", appconfig.Identity.SkillName)},
 	}
 }
 
@@ -95,7 +96,7 @@ func writeSkill(dir, exe, db, url string) error {
 		}
 	}
 	replacer := strings.NewReplacer("{{BINARY}}", exe, "{{DB}}", db, "{{URL}}", url)
-	root := "skills/templatecontext"
+	root := "skills/" + appconfig.Identity.SkillName
 	err := fs.WalkDir(assets.Skill, root, func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err

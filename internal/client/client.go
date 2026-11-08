@@ -16,7 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pocketcontext-labs/pocketcontext-template/internal/bundle"
+	"github.com/pocketcontext-labs/pocketcontext-core/appserver"
+	"github.com/pocketcontext-labs/pocketcontext-template/internal/appconfig"
+	"github.com/pocketcontext-labs/pocketcontext-template/internal/buildinfo"
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9]{15}$`)
@@ -53,17 +55,17 @@ func newClient(base string) *Client {
 }
 
 // New ensures the server is running and obtains a token for the local account.
-func New(p *bundle.Project) (*Client, error) {
+func New(p *appserver.Project) (*Client, error) {
 	c := newClient(p.URL())
 	c.DB = p.DB
-	if err := bundle.EnsureRunning(p, bundle.StartOptions{}); err != nil {
+	if err := appserver.EnsureRunning(p, appserver.StartOptions{TCP: true}); err != nil {
 		return nil, fail(1, "%v", err)
 	}
-	key, err := bundle.ReadKey(p)
+	key, err := appserver.ReadKey(p)
 	if err != nil {
 		return nil, fail(1, "%v", err)
 	}
-	status, data, err := c.send("POST", "/api/bundle/token", nil, map[string]string{bundle.KeyHeader: key}, "", nil)
+	status, data, err := c.send("POST", "/api/bundle/token", nil, map[string]string{appconfig.Identity.LocalKeyHeader: key}, "", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +108,7 @@ func (c *Client) send(method, path string, body any, headers map[string]string, 
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	req.Header.Set("User-Agent", "TemplateContext/"+bundle.Version)
+	req.Header.Set("User-Agent", "TemplateContext/"+buildinfo.Version)
 	if c.token != "" {
 		req.Header.Set("Authorization", c.token)
 	}

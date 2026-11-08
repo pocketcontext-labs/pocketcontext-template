@@ -30,7 +30,7 @@ PLATFORMS = ("linux_amd64", "linux_arm64", "darwin_arm64", "windows_amd64")
 TAGS = (ROOT / "build-tags.txt").read_text(encoding="utf-8").strip()
 GO_VERSION = "go1.27.3"
 GO_IMAGE = "golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb"
-PACKAGE = "github.com/pocketcontext-labs/pocketcontext-template/internal/bundle"
+PACKAGE = "github.com/pocketcontext-labs/pocketcontext-template/internal/buildinfo"
 VERSION_RE = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z")
 # template.json marks the template itself (tests/identity_check.py). Users

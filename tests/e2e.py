@@ -393,11 +393,17 @@ def single_user_scenario(pc):
     me = pc.json('whoami')['id']
     key = local_key(pc)
 
-    # The account is the only one: the server refuses a second, whichever way it is asked for.
+    # The account is the only one: with the local key, the account route only changes its password
+    # (pocketcontext-core; TestRealHooksRefuseSecondAccount proves the hook refuses a second record).
     status, body = pc.http('POST', '/api/bundle/account', {'password': 'synthetic second password'},
                            headers={'X-TemplateContext-Local-Key': key})
-    check(status == 400 and b'exactly one' in body, f'the server refuses a second account: {status} {body!r}')
-    check(token(pc, PASSWORD) and pc.json('whoami')['id'] == me, 'the refused second account changes nothing')
+    check(status == 200 and json.loads(body).get('created') is False and json.loads(body).get('id') == me,
+          f'the account route keeps the one account: {status} {body!r}')
+    status, body = pc.http('POST', '/api/bundle/account', {'password': PASSWORD}, headers={'X-TemplateContext-Local-Key': key})
+    check(status == 200 and json.loads(body).get('created') is False, 'the password is restored')
+    # A password change revokes earlier tokens, including mine.
+    mine = token(pc, PASSWORD)
+    check(mine and pc.json('whoami')['id'] == me, 'there is still exactly one account')
     for headers in ({}, {'Authorization': mine}):
         status, _ = pc.http('POST', '/api/collections/users/records', {'email': 'second@example.localhost', 'password': 'synthetic second password',
                                                                       'passwordConfirm': 'synthetic second password'}, headers=headers)
@@ -408,8 +414,8 @@ def single_user_scenario(pc):
     check(status in (403, 404), 'the account cannot be deleted')
     status, _ = pc.http('POST', '/api/bundle/account', {'password': 'synthetic second password'})
     check(status == 403, 'creating the account requires the local key')
-    status, _ = pc.http('POST', '/api/bundle/password', {'password': 'synthetic new password'})
-    check(status == 403, 'changing the password requires the local key')
+    check(pc.http('POST', '/api/bundle/password', {'password': 'synthetic new password'})[0] == 404,
+          'there is no separate password route; /api/bundle/account covers it and requires the local key')
     pc.json('flush')
     with closing(sqlite3.connect(f'file:{pc.db.as_posix()}?mode=ro', uri=True)) as db:
         accounts = db.execute('SELECT id, email FROM users').fetchall()
@@ -481,7 +487,7 @@ def earlier_release_scenario(pc):
     before = hashlib.sha256(old.read_bytes()).hexdigest()
     result = subprocess.run([str(pc.binary), '--db', str(old), 'ensure-running'], capture_output=True, text=True, encoding='utf-8',
                             env=pc.env, timeout=120)
-    check(result.returncode == 1 and 'different TemplateContext release' in result.stderr and '1800000000_users.js' in result.stderr,
+    check(result.returncode == 1 and 'earlier TemplateContext release' in result.stderr and 'templatecontext init --db' in result.stderr,
           f'a database of an earlier release is refused with a clear message: {result.stderr.strip()[-300:]}')
     check(hashlib.sha256(old.read_bytes()).hexdigest() == before and not listening(port), 'the refused database is left unchanged and nothing serves it')
     check(sorted(p.name for p in folder.iterdir()) == ['templatecontext.db', 'templatecontext.json'], 'the refusal writes nothing beside the database')

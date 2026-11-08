@@ -16,7 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pocketcontext-labs/pocketcontext-template/internal/bundle"
+	"github.com/pocketcontext-labs/pocketcontext-core/appserver"
+	"github.com/pocketcontext-labs/pocketcontext-core/atomicfile"
+	"github.com/pocketcontext-labs/pocketcontext-template/internal/appconfig"
 )
 
 // Remote client mode: the server runs on another computer (the agent
@@ -66,7 +68,7 @@ func sessionPath(base string) (string, error) {
 		return "", fmt.Errorf("no user cache directory: %w", err)
 	}
 	sum := sha256.Sum256([]byte(base))
-	return filepath.Join(cache, "templatecontext", "remote-"+hex.EncodeToString(sum[:])[:16], "session.json"), nil
+	return filepath.Join(cache, appconfig.Identity.CacheRoot, "remote-"+hex.EncodeToString(sum[:])[:16], "session.json"), nil
 }
 
 // loadSession returns the stored session, or nil when there is none.
@@ -102,7 +104,7 @@ func saveSession(s *session) error {
 	if err != nil {
 		return err
 	}
-	return bundle.WriteAtomic(path, append(data, '\n'), 0600)
+	return atomicfile.WriteAtomic(path, append(data, '\n'), 0600)
 }
 
 func deleteSession(base string) error {
@@ -119,7 +121,7 @@ func deleteSession(base string) error {
 func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 // probe asks the remote URL which server answers. It never starts anything.
-func probe(base string) (*bundle.Instance, error) {
+func probe(base string) (*appserver.Instance, error) {
 	quick := &http.Client{Timeout: 5 * time.Second, CheckRedirect: noRedirect}
 	resp, err := quick.Get(base + "/api/bundle/instance")
 	if err != nil {
@@ -127,8 +129,8 @@ func probe(base string) (*bundle.Instance, error) {
 			base, base, port(base), port(base))
 	}
 	defer resp.Body.Close()
-	var i bundle.Instance
-	if resp.StatusCode != 200 || json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&i) != nil || i.App != "templatecontext" {
+	var i appserver.Instance
+	if resp.StatusCode != 200 || json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&i) != nil || i.App != appconfig.Identity.AppID {
 		return nil, fail(1, "%s is answered by another program, not TemplateContext (HTTP %d). Forward the server's own port to the same local port; the server refuses other ports.", base, resp.StatusCode)
 	}
 	return &i, nil
@@ -140,7 +142,7 @@ func port(base string) string {
 }
 
 // checkRemote probes the server and compares it with the stored session.
-func checkRemote(base string, s *session) (*bundle.Instance, error) {
+func checkRemote(base string, s *session) (*appserver.Instance, error) {
 	i, err := probe(base)
 	if err != nil {
 		return nil, err
@@ -203,7 +205,7 @@ func login(base string, passwordStdin bool) (map[string]any, error) {
 		return nil, err
 	}
 	c := newClient(base)
-	status, data, err := c.send("POST", "/api/collections/users/auth-with-password", map[string]string{"identity": bundle.AccountEmail, "password": password}, nil, "", nil)
+	status, data, err := c.send("POST", "/api/collections/users/auth-with-password", map[string]string{"identity": appconfig.Identity.LocalAccountEmail, "password": password}, nil, "", nil)
 	if err != nil {
 		return nil, err
 	}

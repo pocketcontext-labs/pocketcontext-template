@@ -12,7 +12,7 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tests"
-	"github.com/pocketcontext-labs/pocketcontext-template/internal/pocketcontext/database"
+	"github.com/pocketcontext-labs/pocketcontext-core/database"
 )
 
 func fixture(t *testing.T) (*tests.TestApp, string, string) {

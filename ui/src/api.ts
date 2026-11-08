@@ -25,8 +25,8 @@ export interface SearchPage {
 // The single-use sign-in page (/bundle/login) writes the same key.
 export const sessionKey = "templatecontext.reader.auth";
 /**
- * The sign-in identity of the project's one account (bundle.AccountEmail in
- * internal/bundle/local.go). Nobody types or sees it: the reader asks only for
+ * The sign-in identity of the project's one account (Identity.LocalAccountEmail in
+ * internal/appconfig/appconfig.go). Nobody types or sees it: the reader asks only for
  * the password.
  */
 export const ACCOUNT_EMAIL = "account@local.invalid";

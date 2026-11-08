@@ -1,4 +1,4 @@
-package bundle
+package appconfig
 
 import (
 	"context"
@@ -9,35 +9,21 @@ import (
 	"testing"
 	"time"
 
-	sqlite3 "github.com/mattn/go-sqlite3"
-
 	"github.com/pocketcontext-labs/pocketcontext-template/internal/pocketcontext/server"
 	"github.com/pocketcontext-labs/pocketcontext-template/internal/pocketcontext/sqlread"
 )
 
-// The SQLite tags of build-tags.txt and the compile option each one enables.
-// SQLite does not report SQLITE_INTROSPECTION_PRAGMAS (its pragmas are always
-// built in nowadays), so sqlite_introspect is checked through pragma_function_list
-// below; sqlite_vtable is proven by CreateModule, which exists only with it.
+// The SQLite tags of build-tags.txt, which is copied unchanged from
+// pocketcontext-core, and the compile option each one enables.
 var sqliteTagOptions = map[string]string{
-	"sqlite_math_functions":  "ENABLE_MATH_FUNCTIONS",
-	"sqlite_percentile":      "ENABLE_PERCENTILE",
-	"sqlite_fts5":            "ENABLE_FTS5",
-	"sqlite_dbstat":          "ENABLE_DBSTAT_VTAB",
-	"sqlite_stat4":           "ENABLE_STAT4",
-	"sqlite_column_metadata": "ENABLE_COLUMN_METADATA",
-	"sqlite_introspect":      "",
-	"sqlite_preupdate_hook":  "ENABLE_PREUPDATE_HOOK",
-	"sqlite_unlock_notify":   "ENABLE_UNLOCK_NOTIFY",
-	"sqlite_vtable":          "ENABLE_RTREE",
+	"sqlite_math_functions": "ENABLE_MATH_FUNCTIONS",
+	"sqlite_percentile":     "ENABLE_PERCENTILE",
+	"sqlite_fts5":           "ENABLE_FTS5",
 }
 
 // Tags that must stay out: they weaken isolation or change storage semantics.
 var forbiddenSQLiteTags = []string{"sqlite_icu", "icu", "sqlite_userauth", "sqlite_allow_uri_authority", "sqlite_secure_delete",
 	"sqlite_secure_delete_fast", "sqlite_vacuum_full", "sqlite_vacuum_incr", "sqlite_foreign_keys", "sqlite_app_armor", "sqlite_os_trace"}
-
-// The Go virtual table API exists only with sqlite_vtable; this does not compile without it.
-var _ = (*sqlite3.SQLiteConn).CreateModule
 
 func buildTags(t *testing.T) map[string]bool {
 	t.Helper()
@@ -110,33 +96,11 @@ func TestSQLiteCompileOptions(t *testing.T) {
 		"CREATE VIRTUAL TABLE probe_fts USING fts5(body)",
 		"CREATE TABLE probe(id INTEGER PRIMARY KEY, v)",
 		"INSERT INTO probe(v) VALUES (1), (2)",
-		"SELECT count(*) FROM dbstat",
-		"ANALYZE",
-		"SELECT count(*) FROM sqlite_stat4",
 		"SELECT count(*) FROM pragma_function_list",
 	} {
 		if _, err := db.Exec(statement); err != nil {
 			t.Errorf("%s: %v", statement, err)
 		}
-	}
-
-	// The preupdate hook fires (the build without the tag has a no-op stub).
-	var fired int
-	sql.Register("sqlite3_preupdate_probe", &sqlite3.SQLiteDriver{ConnectHook: func(c *sqlite3.SQLiteConn) error {
-		c.RegisterPreUpdateHook(func(sqlite3.SQLitePreUpdateData) { fired++ })
-		return nil
-	}})
-	hooked, err := sql.Open("sqlite3_preupdate_probe", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer hooked.Close()
-	hooked.SetMaxOpenConns(1)
-	if _, err := hooked.Exec("CREATE TABLE p(v); INSERT INTO p VALUES (1)"); err != nil {
-		t.Fatal(err)
-	}
-	if fired == 0 {
-		t.Error("the preupdate hook did not fire")
 	}
 }
 

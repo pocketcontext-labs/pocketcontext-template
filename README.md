@@ -1,6 +1,6 @@
 # TemplateContext
 
-A template for local "*Context" applications in one binary, derived from [PocketContext](https://github.com/pocketcontext-labs/pocketcontext). It keeps PocketContext's architecture — a server on PocketBase, a browser reader, a command-line client, a private tunnel to other computers and an agent skill for Claude Code, Codex and Antigravity, all in one Go executable with nothing else needed at run time — and replaces the knowledge base with a hello-world data model: the project's one account adds, lists and searches `greetings`.
+A template for local "*Context" applications in one binary, derived from [PocketContext](https://github.com/pocketcontext-labs/pocketcontext). It builds on the shared library [pocketcontext-core](https://github.com/pocketcontext-labs/pocketcontext-core), pinned to an exact release in `go.mod`, and keeps PocketContext's architecture — a server on PocketBase, a browser reader, a command-line client, a private tunnel to other computers and an agent skill for Claude Code, Codex and Antigravity, all in one Go executable with nothing else needed at run time — and replaces the knowledge base with a hello-world data model: the project's one account adds, lists and searches `greetings`.
 
 TemplateContext is a placeholder product. Nobody is meant to use it as it is: a new product copies the repository, renames every identity item and replaces `greetings` with its own collections.
 
@@ -8,7 +8,7 @@ TemplateContext is a placeholder product. Nobody is meant to use it as it is: a 
 
 Give an agent the new-product prompt of a template release, https://github.com/pocketcontext-labs/pocketcontext-template/releases/latest/download/new-product.md, filled in with the product's name, lowercase id, default port and data model. It downloads that release's source archive, checks it against the release's `checksums.txt`, unpacks it as the product's folder, renames the identity listed in [`template.json`](template.json) (module path, binary, files, cache folder, environment variables, header, skill, reader, workflows, installers, help and documents), replaces the hello-world collection end to end, records the template release and commit in `docs/origin.md` and runs every check. The last check, `python3 tests/identity_check.py --binary bin/PRODUCT` (`make identity`), fails while any `templatecontext`, `TemplateContext`, `TEMPLATECONTEXT_`, `pocketcontext-template`, greeting or the template port 8098 remains outside its explicit allowlist. In the template itself (`template.json` present and `go.mod` naming the template module) the check is inverted: it confirms the identity is still there and passes; `--derived` lists everything a product must rename.
 
-A derived product is a full fork. Port security fixes from PocketContext (see [origin](docs/origin.md)) and from the vendored server (`internal/pocketcontext/VENDORED.md`) by hand.
+A derived product is a full fork. Port security fixes from PocketContext (see [origin](docs/origin.md)), the vendored server (`internal/pocketcontext/VENDORED.md`) and pocketcontext-core by hand; a derived product pins its own core release. Every name of the application (skill, profile registry, app id, port, executable, database and configuration files, environment prefix, header, storage key, ...) is one field of `Identity` in `internal/appconfig/appconfig.go`; `tests/identity_check.py` fails on any field left at the template's value.
 
 ## A project
 
@@ -95,7 +95,7 @@ make build     # bin/templatecontext
 make test      # Go unit tests (including the vendored server's), launcher tests, release tests
 make names     # retired-name check of the repository and bin/templatecontext (tests/name_check.py)
 make identity  # template identity check (tests/identity_check.py; inverted in the template)
-make e2e       # names and identity, then CLI, remote, tunnel and sync end-to-end tests with synthetic greetings
+make e2e       # names, identity and the anonymous route table, then CLI, remote, tunnel and sync end-to-end tests with synthetic greetings
 make windows ZIG=/path/to/zig   # cross-compile bin/windows_amd64/templatecontext.exe
 ```
 
@@ -103,19 +103,7 @@ make windows ZIG=/path/to/zig   # cross-compile bin/windows_amd64/templatecontex
 
 ### Build tags
 
-`build-tags.txt` is the one list of Go build tags every build, test and release uses: SQLite features (first), then the `ts_omit_` tags of the tailcat release in `go.mod`, which leave out tailscale.com features the tunnel does not use (a test checks them against tailcat's own list). PocketContext enables `sqlite_math_functions` and `sqlite_percentile` (math, `median` and `percentile` functions in the SQL reader's allowlist) and `sqlite_fts5` (the in-memory full-text search index). The template adds SQLite features a product may need without changing its build configuration:
-
-| Tag | Enables | Why |
-| --- | --- | --- |
-| `sqlite_dbstat` | `dbstat` virtual table | measure the space each table and index uses, for maintenance and size diagnostics |
-| `sqlite_stat4` | `sqlite_stat4` statistics | better query plans from `ANALYZE` on skewed columns, such as a status or category |
-| `sqlite_column_metadata` | column origin APIs | map result columns to their table and column in server code |
-| `sqlite_introspect` | `pragma_function_list`, `pragma_module_list`, `pragma_pragma_list` | check in tests and diagnostics which functions and modules a build has |
-| `sqlite_preupdate_hook` | the pre-update hook | observe row values before and after a change, e.g. for change logs or cache invalidation in Go |
-| `sqlite_unlock_notify` | `sqlite3_unlock_notify` | let shared-cache connections wait for a lock instead of failing with `SQLITE_LOCKED` |
-| `sqlite_vtable` | Go virtual table modules and R*Tree | implement virtual tables in Go and spatial indexes |
-
-None of them is reachable through the SQL reader: `internal/bundle/sqlite_test.go` checks that every listed tag is compiled in and works, that no unlisted SQLite tag is enabled, and that the reader still denies `dbstat`, `pragma_*` functions, `sqlite_schema`, FTS shadow tables and writes. Never add `icu`, `userauth`, `allow_uri_authority`, `secure_delete`, `vacuum_*`, `foreign_keys`, `app_armor` or `os_trace`: they weaken isolation or change storage semantics, and the test refuses them.
+`build-tags.txt` is the one list of Go build tags every build, test and release uses. It is copied unchanged from pocketcontext-core: SQLite features (`sqlite_math_functions`, `sqlite_percentile` and `sqlite_fts5`, the functions in the SQL reader's allowlist and the in-memory full-text search index), then the `ts_omit_` tags of the tailcat release in `go.mod`. CI compares it with the copy in the pinned core release. Earlier template releases enabled further SQLite features (`dbstat`, `sqlite_stat4`, column metadata, introspection pragmas, preupdate hook, unlock notify, virtual tables); a derived product that needs one adds it deliberately and extends `internal/appconfig/sqlite_test.go`, which checks that every listed tag is compiled in and that the reader still denies `dbstat`, `pragma_*` functions, `sqlite_schema`, FTS shadow tables and writes. Never add `icu`, `userauth`, `allow_uri_authority`, `secure_delete`, `vacuum_*`, `foreign_keys`, `app_armor` or `os_trace`: they weaken isolation or change storage semantics, and the test refuses them.
 
 ## Develop the reader
 
@@ -142,11 +130,11 @@ The browser checks use synthetic data. Install their pinned Chromium once with `
 
 | Command | Checks |
 | --- | --- |
-| `make test` | Go unit tests with the tags in `build-tags.txt` (bundle, client, tunnel, vendored server, SQLite features), `tests/dev_launcher.test.mjs`, `tests/test_release.py` |
+| `make test` | Go unit tests with the tags in `build-tags.txt` (application policy, hooks and SQLite features in `internal/appconfig`, client, vendored server; the server and tunnel tests live in pocketcontext-core), `tests/dev_launcher.test.mjs`, `tests/test_release.py` |
 | `(cd ui && pnpm typecheck && pnpm test)` | reader types and unit tests (Vitest) |
 | `make names` | `tests/name_check.py`: the retired product name appears nowhere in the repository or binary |
 | `make identity` | `tests/identity_check.py`: no template identity left in a derived product (inverted in the template) |
-| `make e2e` | `tests/e2e.py`: init, CLI, the single account and authentication on every API, SQL policy, search, skill, lease, conflict and recover, refusal of other releases' databases, remote mode, tunnel and login codes, in a temporary folder |
+| `make e2e` | `tests/public_routes.py` (the frozen anonymous route table, foreign-Host refusal, loopback-only listening, no public listener option) and `tests/e2e.py`: init, CLI, the single account and authentication on every API, SQL policy, search, skill, lease, conflict and recover, refusal of other releases' databases, remote mode, tunnel and login codes, in a temporary folder |
 | `node tests/reader_ui_browser.mjs` | the embedded reader in Chromium |
 | `node tests/ui_dev_browser.mjs` | hot reload through `serve --ui-dev`, and a same-port loopback forward |
 | `make windows` | the Windows cross-compile |
@@ -177,16 +165,16 @@ The installers have no default folder: name it as the argument of `install.sh` (
 | Path | Content |
 | --- | --- |
 | `cmd/templatecontext` | entry point |
-| `internal/bundle` | project resolution, working copy and write-back, lease, refusal of other releases' databases, local authentication routes, server lifecycle, UI development proxy |
+| `internal/appconfig` | the application's `Identity`, public route policy (deny all), maintenance reads, copy and hooks on pocketcontext-core |
+| `internal/buildinfo` | version and commit stamped at build time |
 | `internal/client` | CLI commands, greetings, remote mode, skill installation, help |
-| `internal/tunnel` | `tunnel serve` and `tunnel forward` on tailcat: identity, port filter, loopback proxy |
-| `internal/pocketcontext` | vendored PocketContext server (SQL reads, search, maintenance, tracing); see `VENDORED.md` |
+| `internal/pocketcontext` | vendored PocketContext server (SQL reads, search, tracing); see `VENDORED.md`. The project, sync-safe database handling, local routes, tunnel and UI development proxy live in [pocketcontext-core](https://github.com/pocketcontext-labs/pocketcontext-core) |
 | `pb_hooks`, `pb_migrations` | schema and server-side rules |
 | `server.json` | SQL column allowlist and search index configuration |
 | `ui` | browser reader (React 19, Vite) |
 | `embed.go` | embeds `pb_hooks`, `pb_migrations`, `server.json`, `ui/dist` and `skills/templatecontext` |
 | `skills/templatecontext` | skill template (`SKILL.remote.md` for `skill --url`); `templatecontext skill` fills in absolute paths |
 | `scripts` | `dev.mjs` launcher, `release.py`, installer templates, `zig-cc` wrapper, license notices |
-| `tests` | `e2e.py`, `name_check.py`, `identity_check.py`, `test_release.py`, `dev_launcher.test.mjs`, browser checks |
+| `tests` | `e2e.py`, `public_routes.py` and `testdata/public_routes.json`, `name_check.py`, `identity_check.py`, `test_release.py`, `dev_launcher.test.mjs`, browser checks |
 | `prompts/new-product.md` | the prompt that turns this template into a product |
 | `template.json` | marks the template and lists its identity; deleted in a derived product |

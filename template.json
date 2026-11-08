@@ -1,10 +1,31 @@
 {
-  "note": "Marks this repository as pocketcontext-template itself. A product derived from it deletes this file (prompts/new-product.md); tests/identity_check.py then requires every template identity item to be renamed.",
+  "note": "Marks this repository as pocketcontext-template itself and lists its identity (identity mirrors internal/appconfig/appconfig.go; tests/identity_check.py keeps them in step). A product derived from it deletes this file (prompts/new-product.md); tests/identity_check.py then requires every identity item, including the skill, profile registry, app id, port and executable, to be renamed.",
   "repository": "pocketcontext-labs/pocketcontext-template",
   "module": "github.com/pocketcontext-labs/pocketcontext-template",
   "name": "TemplateContext",
   "id": "templatecontext",
   "envPrefix": "TEMPLATECONTEXT_",
   "port": 8098,
-  "collection": "greetings"
+  "collection": "greetings",
+  "executable": "cmd/templatecontext",
+  "skill": "skills/templatecontext",
+  "identity": {
+    "AppID": "templatecontext",
+    "DisplayName": "TemplateContext",
+    "Command": "templatecontext",
+    "SkillName": "templatecontext",
+    "Marker": ".templatecontext",
+    "RouterMarker": ".templatecontext-router",
+    "RegistryNamespace": "templatecontext",
+    "CacheRoot": "templatecontext",
+    "SocketHost": "templatecontext.internal",
+    "SocketDirPrefix": "templatecontext",
+    "DefaultPort": "8098",
+    "DatabaseFile": "templatecontext.db",
+    "ConfigFile": "templatecontext.json",
+    "EnvPrefix": "TEMPLATECONTEXT",
+    "LocalKeyHeader": "X-TemplateContext-Local-Key",
+    "ReaderStorageKey": "templatecontext.reader.auth",
+    "HookGlobal": "$templatecontext"
+  }
 }
