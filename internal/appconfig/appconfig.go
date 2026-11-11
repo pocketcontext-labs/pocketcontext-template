@@ -54,10 +54,13 @@ var Text = appserver.Text{
 	OAuthConsent: appserver.OAuthConsentText{
 		ConnectionsHTML: `<p>These apps can read, search, query and change this application's records through its MCP tools. Revoke access to disconnect an app.</p>`,
 		RequestHTML:     `<p><strong>{{.Name}}</strong> is asking to read, search, query and change (including delete) this application's records.</p><p>This does not grant server administration, shell or file access.</p>`,
+		// Shown on the consent and connected-apps pages to a person who is not signed in.
+		SignInHTML: `If you are not signed in, open your fresh {{.Product}} reader sign-in link in another tab of this browser, then return here. Your setup agent can issue one with <code>open --public</code>. You can also <a href="/" target="_blank" rel="noopener">open the reader</a> and use your password if you set one.`,
 	},
 	BudgetExhausted: "Request budget exhausted. Retry after the indicated delay.",
 	OTPSubject:      "Log in to TemplateContext",
 	OTPSenderName:   "TemplateContext",
+	OTPLoginPath:    "/#/login", // hosted sign-in email link; unused without hosted mode
 }
 
 // Observe lists the diagnostic labels of the MCP tools and the routes they call.
@@ -75,6 +78,20 @@ func Policy() appserver.Policy {
 			ReadGets:  map[string]bool{"/api/context/schema": true},
 		},
 		Observe: Observe,
+		// Connected MCP clients store the scope: a product derived from this
+		// template chooses its own before its first release and never changes it.
+		OAuthScope:      "knowledge",
+		PublicBodyLimit: 110 << 20,
+		// The multi-account template releases before 0.2.0 are recognized by
+		// their table. Their migrations need no entry: a database whose
+		// migrations a release does not ship is refused regardless. A product
+		// derived from this template lists its own earlier schemas, or empty lists.
+		Legacy: appserver.LegacySchema{
+			Migrations:  []string{},
+			Tables:      []string{"user_directory"},
+			Description: "multi-account",
+		},
+		// Hosted stays zero: hosted mode is not offered here, and core refuses it.
 	}
 }
 

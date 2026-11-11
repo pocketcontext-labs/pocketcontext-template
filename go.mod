@@ -7,7 +7,7 @@ require (
 	ganigeorgiev.com/pocketbase/pocketbase v0.41.1
 	github.com/mattn/go-sqlite3 v1.14.52
 	github.com/modelcontextprotocol/go-sdk v1.7.0
-	github.com/pocketcontext-labs/pocketcontext-core v0.1.3
+	github.com/pocketcontext-labs/pocketcontext-core v0.2.0
 	github.com/tailscale/tailcat v0.7.0
 	golang.org/x/term v0.47.0
 )
